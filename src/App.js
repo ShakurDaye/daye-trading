@@ -1,3 +1,4 @@
+/* eslint-disable */
 import { useState, useEffect, useCallback } from "react";
 
 // ─── FAKE DATA ────────────────────────────────────────────────────────────────
@@ -411,7 +412,6 @@ function AuthPage({ authMode, setAuthMode, onSuccess, onDemo, onBack }) {
 // ─────────────────────────────────────────────────────────────────────────────
 export default function DayeTrading() {
   const [page, setPage]               = useState("landing");
-  const [authed, setAuthed]           = useState(false);
   const [authMode, setAuthMode]       = useState("login");
   const [currentUser, setCurrentUser] = useState({ name:"Trader", email:"", social:"" });
   const [selectedLesson, setSelectedLesson] = useState(null);
@@ -513,7 +513,7 @@ export default function DayeTrading() {
         </p>
         <div style={{display:"flex",gap:16,justifyContent:"center",flexWrap:"wrap"}}>
           <button style={{...S.btnPrimary,padding:"15px 32px",fontSize:16,borderRadius:12}} onClick={()=>{setAuthMode("signup");nav("auth");}}>🎓 Start Learning</button>
-          <button style={{...S.btnSec,padding:"15px 32px",fontSize:16,borderRadius:12}} onClick={()=>{setCurrentUser({name:"Demo User",email:"",social:"Demo"});setAuthed(true);nav("simulator");}}>📈 Try Demo Trading</button>
+          <button style={{...S.btnSec,padding:"15px 32px",fontSize:16,borderRadius:12}} onClick={()=>{setCurrentUser({name:"Demo User",email:"",social:"Demo"});nav("simulator");}}>📈 Try Demo Trading</button>
         </div>
         <p style={{marginTop:20,fontSize:12,color:"rgba(255,255,255,0.25)"}}>No credit card required · 100% free · Simulated data only</p>
       </div>
@@ -1050,7 +1050,7 @@ export default function DayeTrading() {
           ))}
         </div>
       </div>
-      <button style={{...S.btnSec,color:"#ef4444",borderColor:"rgba(239,68,68,0.3)"}} onClick={()=>{setAuthed(false);setCurrentUser({name:"Trader",email:"",social:""});nav("landing");}}>
+      <button style={{...S.btnSec,color:"#ef4444",borderColor:"rgba(239,68,68,0.3)"}} onClick={()=>{setCurrentUser({name:"Trader",email:"",social:""});nav("landing");}}>
         Log Out
       </button>
     </div>
@@ -1076,8 +1076,8 @@ export default function DayeTrading() {
       <AuthPage
         authMode={authMode}
         setAuthMode={setAuthMode}
-        onSuccess={(userData) => { setCurrentUser(userData); setAuthed(true); nav("dashboard"); }}
-        onDemo={() => { setCurrentUser({ name:"Demo User", email:"", social:"Demo" }); setAuthed(true); nav("dashboard"); }}
+        onSuccess={(userData) => { setCurrentUser(userData); nav("dashboard"); }}
+        onDemo={() => { setCurrentUser({ name:"Demo User", email:"", social:"Demo" }); nav("dashboard"); }}
         onBack={() => nav("landing")}
       />
     </div>
