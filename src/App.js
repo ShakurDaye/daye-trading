@@ -881,101 +881,113 @@ export default function DayeTrading() {
 
   // ── SIMULATOR ────────────────────────────────────────────────────────────────
   const PageSimulator = () => {
-    const TIMEFRAMES = ["1m","5m","15m","30m","1h","4h","1D"];
-    const [tf, setTf]             = useState("1D");
-    const [zoom, setZoom]         = useState(1);
-    const [pan, setPan]           = useState(0);
-    const [tool, setTool]         = useState(null); // null | "point" | "trendline" | "support" | "resistance" | "horizontal"
-    const [drawings, setDrawings] = useState([]);
-    const [pendingPt, setPendingPt] = useState(null); // first click for line tools
-    const [tooltip, setTooltip]   = useState(null);
+
+    // ── Timeframe config: each TF has its own volatility, candle count, tick speed, label ──
+    const TF_CONFIG = {
+      "1m":  { vol:0.0018, count:80, tickMs:800,  label:"1 minute",  wicks:0.003 },
+      "5m":  { vol:0.004,  count:80, tickMs:1500, label:"5 minutes", wicks:0.005 },
+      "15m": { vol:0.007,  count:80, tickMs:2000, label:"15 minutes",wicks:0.008 },
+      "30m": { vol:0.011,  count:80, tickMs:2500, label:"30 minutes",wicks:0.010 },
+      "1h":  { vol:0.016,  count:80, tickMs:3000, label:"1 hour",    wicks:0.013 },
+      "4h":  { vol:0.028,  count:80, tickMs:3800, label:"4 hours",   wicks:0.020 },
+      "1D":  { vol:0.040,  count:80, tickMs:5000, label:"1 day",     wicks:0.030 },
+    };
+
+    const [tf, setTf]               = useState("1D");
+    const [playing, setPlaying]     = useState(true);
+    const [zoom, setZoom]           = useState(1);
+    const [pan, setPan]             = useState(0);
+    const [tool, setTool]           = useState(null);
+    const [drawings, setDrawings]   = useState([]);
+    const [pendingPt, setPendingPt] = useState(null);
+    const [tooltip, setTooltip]     = useState(null);
     const [showGuide, setShowGuide] = useState(false);
-    const svgRef = useState(null);
-    const [candles, setCandles]   = useState(() => buildCandles(tradeAsset.price, 80));
     const [currentPrice, setCurrentPrice] = useState(tradeAsset.price);
 
-    // Rebuild candles when asset or timeframe changes
+    // Build candles with TF-specific volatility
+    const buildCandles = (base, tfKey) => {
+      const { vol, count, wicks } = TF_CONFIG[tfKey];
+      const arr = [];
+      let p = base * 0.97;
+      for (let i = 0; i < count; i++) {
+        const o = p;
+        const m = (Math.random() - 0.47) * o * vol;
+        const c = Math.max(o * 0.97, o + m);
+        const h = Math.max(o, c) * (1 + Math.random() * wicks);
+        const l = Math.min(o, c) * (1 - Math.random() * wicks);
+        arr.push({ open: o, close: c, high: h, low: l });
+        p = c;
+      }
+      return arr;
+    };
+
+    const [candles, setCandles] = useState(() => buildCandles(tradeAsset.price, "1D"));
+
+    // Rebuild on asset OR timeframe change — keep drawings
     useEffect(() => {
-      setCandles(buildCandles(tradeAsset.price, 80));
-      setCurrentPrice(tradeAsset.price);
-      setDrawings([]);
+      const fresh = buildCandles(tradeAsset.price, tf);
+      setCandles(fresh);
+      setCurrentPrice(fresh[fresh.length - 1].close);
       setPendingPt(null);
       setPan(0);
     }, [tradeAsset.symbol, tf]);
 
-    // Live tick
+    // Live tick — speed and volatility driven by selected TF
     useEffect(() => {
+      if (!playing) return;
+      const { vol, wicks, tickMs } = TF_CONFIG[tf];
       const id = setInterval(() => {
         setCandles(prev => {
-          const last  = prev[prev.length-1];
+          const last  = prev[prev.length - 1];
           const open  = last.close;
-          const move  = (Math.random()-0.47)*open*0.012;
-          const close = Math.max(open*0.985, open+move);
-          const high  = Math.max(open,close)*(1+Math.random()*0.006);
-          const low   = Math.min(open,close)*(1-Math.random()*0.006);
+          const move  = (Math.random() - 0.47) * open * vol;
+          const close = Math.max(open * 0.97, open + move);
+          const high  = Math.max(open, close) * (1 + Math.random() * wicks);
+          const low   = Math.min(open, close) * (1 - Math.random() * wicks);
           setCurrentPrice(close);
           return [...prev.slice(1), { open, close, high, low }];
         });
-      }, 1800);
+      }, tickMs);
       return () => clearInterval(id);
-    }, [tradeAsset.symbol, tf]);
+    }, [tf, playing, tradeAsset.symbol]);
 
-    function buildCandles(base, count) {
-      const arr = [];
-      let p = base * 0.96;
-      for (let i=0; i<count; i++) {
-        const o = p;
-        const m = (Math.random()-0.47)*p*0.022;
-        const c = Math.max(o*0.98, o+m);
-        const h = Math.max(o,c)*(1+Math.random()*0.009);
-        const l = Math.min(o,c)*(1-Math.random()*0.009);
-        arr.push({open:o,close:c,high:h,low:l});
-        p = c;
-      }
-      return arr;
-    }
-
-    // Chart math
+    // Chart geometry
     const visCount = Math.floor(40 / zoom);
     const start    = Math.max(0, Math.min(candles.length - visCount, pan));
     const visible  = candles.slice(start, start + visCount);
-    const W = 800, H = 340, padL = 60, padR = 8, padT = 16, padB = 28;
-    const chartW   = W - padL - padR;
-    const chartH   = H - padT - padB;
-    const allP     = visible.flatMap(c=>[c.high,c.low]);
-    const minP     = Math.min(...allP)*0.999;
-    const maxP     = Math.max(...allP)*1.001;
-    const range    = maxP - minP || 1;
-    const toY      = p => padT + ((maxP-p)/range)*chartH;
-    const cw       = Math.max(3, (chartW/visible.length)*0.7);
-    const cs       = chartW / visible.length;
-    const toX      = i => padL + i*cs + cs/2;
+    const W = 820, H = 360, padL = 66, padR = 10, padT = 18, padB = 32;
+    const chartW = W - padL - padR;
+    const chartH = H - padT - padB;
+    const allP   = visible.flatMap(c => [c.high, c.low]);
+    const minP   = Math.min(...allP) * 0.9995;
+    const maxP   = Math.max(...allP) * 1.0005;
+    const range  = maxP - minP || 1;
+    const toY    = p  => padT + ((maxP - p) / range) * chartH;
+    const cw     = Math.max(3, (chartW / visible.length) * 0.68);
+    const cs     = chartW / visible.length;
+    const toX    = i  => padL + i * cs + cs / 2;
 
-    // SVG coordinate from mouse event
     const svgCoords = (e) => {
-      const svg = e.currentTarget;
+      const svg  = e.currentTarget;
       const rect = svg.getBoundingClientRect();
-      const scaleX = W / rect.width;
-      const scaleY = H / rect.height;
       return {
-        x: (e.clientX - rect.left) * scaleX,
-        y: (e.clientY - rect.top)  * scaleY,
+        x: (e.clientX - rect.left) * (W / rect.width),
+        y: (e.clientY - rect.top)  * (H / rect.height),
       };
     };
 
     const handleChartClick = (e) => {
       if (!tool) return;
-      const {x, y} = svgCoords(e);
+      const { x, y } = svgCoords(e);
       if (tool === "point") {
-        setDrawings(d => [...d, { type:"point", x, y }]);
+        setDrawings(d => [...d, { type: "point", x, y }]);
       } else if (tool === "horizontal") {
-        setDrawings(d => [...d, { type:"horizontal", y }]);
+        setDrawings(d => [...d, { type: "horizontal", y }]);
       } else {
-        // line tools need two clicks
         if (!pendingPt) {
-          setPendingPt({x, y});
+          setPendingPt({ x, y });
         } else {
-          setDrawings(d => [...d, { type:tool, x1:pendingPt.x, y1:pendingPt.y, x2:x, y2:y }]);
+          setDrawings(d => [...d, { type: tool, x1: pendingPt.x, y1: pendingPt.y, x2: x, y2: y }]);
           setPendingPt(null);
         }
       }
@@ -983,125 +995,153 @@ export default function DayeTrading() {
 
     const lineColor = { trendline:"#a78bfa", support:"#22c55e", resistance:"#ef4444", horizontal:"#eab308" };
     const lineLabel = { trendline:"Trendline", support:"Support", resistance:"Resistance", horizontal:"Horizontal" };
-    const priceUp   = currentPrice >= tradeAsset.price;
+    const priceUp   = candles.length >= 2 && candles[candles.length-1].close >= candles[candles.length-2].close;
 
     const TOOLS = [
-      { id:"point",      icon:"📍", label:"Point Marker",   tip:"Click to drop a marker on the chart" },
-      { id:"trendline",  icon:"📐", label:"Trendline",      tip:"Click two points to draw a trendline" },
-      { id:"support",    icon:"🟢", label:"Support Line",   tip:"Click two points to mark a support zone" },
-      { id:"resistance", icon:"🔴", label:"Resistance Line",tip:"Click two points to mark a resistance zone" },
-      { id:"horizontal", icon:"➖", label:"Horizontal Line", tip:"Click to draw a horizontal price level" },
+      { id:"point",      icon:"📍", label:"Point",      tip:"Drop a marker" },
+      { id:"trendline",  icon:"📐", label:"Trendline",  tip:"2-click line" },
+      { id:"support",    icon:"🟢", label:"Support",    tip:"2-click support zone" },
+      { id:"resistance", icon:"🔴", label:"Resistance", tip:"2-click resistance zone" },
+      { id:"horizontal", icon:"➖", label:"H-Line",     tip:"1-click price level" },
     ];
 
     return (
       <div>
         {/* Disclaimer */}
-        <div style={{background:"rgba(234,179,8,0.08)",border:"1px solid rgba(234,179,8,0.2)",borderRadius:10,padding:"10px 16px",fontSize:12,color:"#fbbf24",marginBottom:18,display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
-          ⚠️ <strong>DAYE Trading</strong> uses simulated market data for educational purposes only. This is not financial advice. Trading involves risk.
+        <div style={{background:"rgba(234,179,8,0.08)",border:"1px solid rgba(234,179,8,0.2)",borderRadius:10,padding:"10px 16px",fontSize:12,color:"#fbbf24",marginBottom:16,display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+          ⚠️ <strong>DAYE Trading</strong> — Simulated data only. Not financial advice. Trading involves risk.
         </div>
 
-        {/* Header row */}
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:20,flexWrap:"wrap",gap:12}}>
+        {/* Page header */}
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:18,flexWrap:"wrap",gap:12}}>
           <div>
             <h1 style={{...S.h2,marginBottom:4}}>Trading Simulator</h1>
             <p style={S.muted}>Practice technical analysis with live simulated charts.</p>
           </div>
-          <div style={{display:"flex",gap:14,flexWrap:"wrap"}}>
+          <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
             {[
-              {label:"ACCOUNT BALANCE", val:"$12,480.32", color:"#fff"},
-              {label:"BUYING POWER",    val:"$8,240.00",  color:"#fff"},
-              {label:"TODAY'S P&L",     val:"+$116.22",   color:"#22c55e"},
+              {label:"BALANCE",     val:"$12,480.32", color:"#fff"},
+              {label:"BUYING PWR",  val:"$8,240.00",  color:"#fff"},
+              {label:"TODAY P&L",   val:"+$116.22",   color:"#22c55e"},
             ].map(s=>(
-              <div key={s.label} style={{...S.card,padding:"10px 16px",minWidth:120}}>
-                <div style={{...S.muted,fontSize:10,marginBottom:3,textTransform:"uppercase"}}>{s.label}</div>
-                <div style={{fontWeight:800,fontSize:16,color:s.color}}>{s.val}</div>
+              <div key={s.label} style={{...S.card,padding:"9px 14px"}}>
+                <div style={{...S.muted,fontSize:10,marginBottom:2}}>{s.label}</div>
+                <div style={{fontWeight:800,fontSize:15,color:s.color}}>{s.val}</div>
               </div>
             ))}
           </div>
         </div>
 
-        <div style={{display:"grid",gridTemplateColumns:mobile?"1fr":"1fr 280px",gap:18,marginBottom:18}}>
+        <div style={{display:"grid",gridTemplateColumns:mobile?"1fr":"1fr 270px",gap:18,marginBottom:18}}>
 
-          {/* ─ CHART PANEL ─ */}
+          {/* ─── CHART PANEL ─── */}
           <div style={{...S.card,padding:0,overflow:"hidden"}}>
-            {/* Asset + price bar */}
-            <div style={{display:"flex",alignItems:"center",gap:14,padding:"14px 18px",borderBottom:"1px solid rgba(255,255,255,0.06)",flexWrap:"wrap",gap:10}}>
-              <select style={{...S.select,fontWeight:700,fontSize:15}} value={tradeAsset.symbol} onChange={e=>setTradeAsset(ASSETS.find(a=>a.symbol===e.target.value))}>
+
+            {/* Asset row */}
+            <div style={{display:"flex",alignItems:"center",gap:12,padding:"12px 16px",borderBottom:"1px solid rgba(255,255,255,0.06)",flexWrap:"wrap",gap:8}}>
+              <select style={{...S.select,fontWeight:700,fontSize:14}} value={tradeAsset.symbol} onChange={e=>setTradeAsset(ASSETS.find(a=>a.symbol===e.target.value))}>
                 {ASSETS.map(a=><option key={a.symbol} value={a.symbol}>{a.symbol} — {a.name}</option>)}
               </select>
               <div>
-                <span style={{fontWeight:800,fontSize:22}}>${currentPrice.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
-                <span style={{fontSize:13,color:priceUp?"#22c55e":"#ef4444",marginLeft:8}}>{priceUp?"▲":"▼"} {tradeAsset.pct}%</span>
+                <span style={{fontWeight:800,fontSize:20}}>${currentPrice.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+                <span style={{fontSize:12,color:priceUp?"#22c55e":"#ef4444",marginLeft:8}}>{priceUp?"▲":"▼"} {tradeAsset.pct}%</span>
               </div>
-              <div style={{marginLeft:"auto",display:"flex",gap:2,flexWrap:"wrap"}}>
-                {TIMEFRAMES.map(t=>(
-                  <button key={t} onClick={()=>setTf(t)} style={{padding:"4px 10px",border:"none",borderRadius:6,cursor:"pointer",fontSize:12,fontWeight:600,background:tf===t?"#7c3aed":"rgba(255,255,255,0.06)",color:tf===t?"#fff":"rgba(255,255,255,0.45)",transition:"all 0.15s"}}>
+
+              {/* TF selector */}
+              <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+                {["1m","5m","15m","30m","1h","4h","1D"].map(t=>(
+                  <button key={t} onClick={()=>setTf(t)} style={{
+                    padding:"5px 11px", border:"none", borderRadius:7, cursor:"pointer",
+                    fontSize:12, fontWeight:700,
+                    background: tf===t ? "#7c3aed" : "rgba(255,255,255,0.06)",
+                    color:      tf===t ? "#fff"    : "rgba(255,255,255,0.45)",
+                    boxShadow:  tf===t ? "0 0 10px rgba(124,58,237,0.5)" : "none",
+                    transition: "all 0.15s",
+                    transform:  tf===t ? "scale(1.08)" : "scale(1)",
+                  }}>
                     {t}
                   </button>
                 ))}
               </div>
             </div>
 
-            {/* Toolbar */}
-            <div style={{display:"flex",alignItems:"center",gap:6,padding:"8px 14px",borderBottom:"1px solid rgba(255,255,255,0.05)",flexWrap:"wrap",background:"rgba(0,0,0,0.2)"}}>
-              <span style={{...S.muted,fontSize:11,marginRight:4}}>TOOLS:</span>
-              {TOOLS.map(t=>(
-                <button key={t.id} title={t.tip} onClick={()=>setTool(tool===t.id?null:t.id)}
-                  style={{padding:"4px 10px",border:`1px solid ${tool===t.id?"#7c3aed":"rgba(255,255,255,0.1)"}`,borderRadius:6,cursor:"pointer",fontSize:12,background:tool===t.id?"rgba(124,58,237,0.3)":"transparent",color:tool===t.id?"#c4b5fd":"rgba(255,255,255,0.5)",display:"flex",alignItems:"center",gap:5}}>
-                  {t.icon} <span style={{display:mobile?"none":"inline"}}>{t.label}</span>
-                </button>
-              ))}
-              {drawings.length>0&&(
-                <button onClick={()=>{setDrawings([]);setPendingPt(null);}} style={{padding:"4px 10px",border:"1px solid rgba(239,68,68,0.3)",borderRadius:6,cursor:"pointer",fontSize:12,background:"rgba(239,68,68,0.1)",color:"#f87171",marginLeft:"auto"}}>
-                  🗑 Clear
-                </button>
-              )}
+            {/* TF label + play/pause */}
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"6px 16px",background:"rgba(124,58,237,0.06)",borderBottom:"1px solid rgba(255,255,255,0.04)",flexWrap:"wrap",gap:6}}>
+              <span style={{fontSize:11,color:"#a78bfa",fontWeight:600}}>
+                📊 Each candle represents <strong style={{color:"#c4b5fd"}}>{TF_CONFIG[tf].label}</strong> · Updates every {TF_CONFIG[tf].tickMs/1000}s
+              </span>
+              <button onClick={()=>setPlaying(p=>!p)} style={{
+                display:"flex",alignItems:"center",gap:6,padding:"4px 14px",
+                border:`1px solid ${playing?"rgba(34,197,94,0.4)":"rgba(239,68,68,0.4)"}`,
+                borderRadius:7, cursor:"pointer", fontSize:12, fontWeight:700,
+                background: playing?"rgba(34,197,94,0.1)":"rgba(239,68,68,0.1)",
+                color: playing?"#22c55e":"#ef4444",
+              }}>
+                {playing ? "⏸ Pause" : "▶ Play"}
+              </button>
             </div>
 
-            {/* Zoom + pan controls */}
-            <div style={{display:"flex",alignItems:"center",gap:8,padding:"6px 14px",borderBottom:"1px solid rgba(255,255,255,0.04)",background:"rgba(0,0,0,0.15)"}}>
-              <span style={{...S.muted,fontSize:11}}>ZOOM:</span>
-              <button onClick={()=>setZoom(z=>Math.min(4,+(z+0.25).toFixed(2)))} style={{width:26,height:26,borderRadius:6,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.06)",color:"#fff",cursor:"pointer",fontSize:16,display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
-              <span style={{fontSize:12,color:"rgba(255,255,255,0.5)",minWidth:36,textAlign:"center"}}>{Math.round(zoom*100)}%</span>
-              <button onClick={()=>setZoom(z=>Math.max(0.5,+(z-0.25).toFixed(2)))} style={{width:26,height:26,borderRadius:6,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.06)",color:"#fff",cursor:"pointer",fontSize:16,display:"flex",alignItems:"center",justifyContent:"center"}}>−</button>
-              <span style={{...S.muted,fontSize:11,marginLeft:12}}>PAN:</span>
-              <button onClick={()=>setPan(p=>Math.max(0,p-5))} style={{width:26,height:26,borderRadius:6,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.06)",color:"#fff",cursor:"pointer",fontSize:13}}>◀</button>
-              <button onClick={()=>setPan(p=>Math.min(candles.length-visCount, p+5))} style={{width:26,height:26,borderRadius:6,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.06)",color:"#fff",cursor:"pointer",fontSize:13}}>▶</button>
+            {/* Drawing toolbar */}
+            <div style={{display:"flex",alignItems:"center",gap:5,padding:"7px 12px",borderBottom:"1px solid rgba(255,255,255,0.04)",background:"rgba(0,0,0,0.2)",flexWrap:"wrap"}}>
+              <span style={{...S.muted,fontSize:10,marginRight:3,textTransform:"uppercase",letterSpacing:"0.05em"}}>Draw:</span>
+              {TOOLS.map(t=>(
+                <button key={t.id} title={t.tip} onClick={()=>setTool(tool===t.id?null:t.id)}
+                  style={{padding:"3px 9px",border:`1px solid ${tool===t.id?"#7c3aed":"rgba(255,255,255,0.1)"}`,borderRadius:6,cursor:"pointer",fontSize:11,background:tool===t.id?"rgba(124,58,237,0.3)":"transparent",color:tool===t.id?"#c4b5fd":"rgba(255,255,255,0.45)",display:"flex",alignItems:"center",gap:4,transition:"all 0.15s"}}>
+                  {t.icon} {t.label}
+                </button>
+              ))}
+              {drawings.length > 0 && (
+                <button onClick={()=>{setDrawings([]);setPendingPt(null);}} style={{padding:"3px 9px",border:"1px solid rgba(239,68,68,0.3)",borderRadius:6,cursor:"pointer",fontSize:11,background:"rgba(239,68,68,0.1)",color:"#f87171",marginLeft:"auto"}}>
+                  🗑 Clear ({drawings.length})
+                </button>
+              )}
               {tool && (
-                <div style={{marginLeft:"auto",fontSize:12,color:"#a78bfa",background:"rgba(124,58,237,0.1)",border:"1px solid rgba(124,58,237,0.2)",borderRadius:6,padding:"3px 10px"}}>
-                  {pendingPt ? "🖱 Click second point…" : `🖱 Click to place ${TOOLS.find(t2=>t2.id===tool)?.label}`}
+                <div style={{marginLeft:"auto",fontSize:11,color:"#a78bfa",background:"rgba(124,58,237,0.1)",border:"1px solid rgba(124,58,237,0.2)",borderRadius:6,padding:"3px 10px"}}>
+                  {pendingPt ? "🖱 Click second point…" : `🖱 ${TOOLS.find(t2=>t2.id===tool)?.tip}`}
                 </div>
               )}
             </div>
 
+            {/* Zoom + pan bar */}
+            <div style={{display:"flex",alignItems:"center",gap:7,padding:"5px 12px",borderBottom:"1px solid rgba(255,255,255,0.04)",background:"rgba(0,0,0,0.12)"}}>
+              <span style={{...S.muted,fontSize:10,textTransform:"uppercase",letterSpacing:"0.04em"}}>Zoom:</span>
+              <button onClick={()=>setZoom(z=>Math.min(4,+(z+0.25).toFixed(2)))} style={{width:24,height:24,borderRadius:5,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.06)",color:"#fff",cursor:"pointer",fontSize:15,display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>+</button>
+              <span style={{fontSize:11,color:"rgba(255,255,255,0.4)",minWidth:34,textAlign:"center"}}>{Math.round(zoom*100)}%</span>
+              <button onClick={()=>setZoom(z=>Math.max(0.5,+(z-0.25).toFixed(2)))} style={{width:24,height:24,borderRadius:5,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.06)",color:"#fff",cursor:"pointer",fontSize:15,display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>−</button>
+              <span style={{...S.muted,fontSize:10,marginLeft:10,textTransform:"uppercase",letterSpacing:"0.04em"}}>Pan:</span>
+              <button onClick={()=>setPan(p=>Math.max(0,p-5))} style={{width:24,height:24,borderRadius:5,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.06)",color:"#fff",cursor:"pointer",fontSize:12,display:"flex",alignItems:"center",justifyContent:"center"}}>◀</button>
+              <button onClick={()=>setPan(p=>Math.min(candles.length-visCount,p+5))} style={{width:24,height:24,borderRadius:5,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.06)",color:"#fff",cursor:"pointer",fontSize:12,display:"flex",alignItems:"center",justifyContent:"center"}}>▶</button>
+              <span style={{...S.muted,fontSize:10,marginLeft:8}}>{visible.length} candles · {tf} each</span>
+              {!playing && (
+                <span style={{marginLeft:"auto",fontSize:11,color:"#ef4444",background:"rgba(239,68,68,0.08)",border:"1px solid rgba(239,68,68,0.2)",borderRadius:6,padding:"2px 10px",fontWeight:600}}>⏸ PAUSED</span>
+              )}
+            </div>
+
             {/* SVG Chart */}
-            <div style={{background:"#0a0a14",position:"relative"}}>
+            <div style={{background:"#080812",position:"relative"}}>
               <svg
-                width="100%"
-                viewBox={`0 0 ${W} ${H}`}
+                width="100%" viewBox={`0 0 ${W} ${H}`}
                 style={{display:"block",cursor:tool?"crosshair":"default"}}
                 onClick={handleChartClick}
                 onMouseMove={e=>{
-                  if(!tool) {
+                  if (!tool) {
                     const {x} = svgCoords(e);
                     const idx = Math.floor((x-padL)/cs);
-                    if (idx>=0 && idx<visible.length) {
-                      const c = visible[idx];
-                      setTooltip({x:toX(idx),y:padT,c});
-                    }
+                    if (idx>=0&&idx<visible.length) setTooltip({x:toX(idx),c:visible[idx]});
+                    else setTooltip(null);
                   }
                 }}
                 onMouseLeave={()=>setTooltip(null)}
               >
-                {/* Grid */}
+                {/* Price grid */}
                 {[0,0.2,0.4,0.6,0.8,1].map(t=>{
                   const py = padT + t*chartH;
-                  const price = maxP - t*range;
+                  const pr = maxP - t*range;
                   return (
                     <g key={t}>
                       <line x1={padL} y1={py} x2={W-padR} y2={py} stroke="rgba(255,255,255,0.04)" strokeWidth="1"/>
-                      <text x={padL-4} y={py+4} fill="rgba(255,255,255,0.3)" fontSize="9" textAnchor="end">
-                        ${price.toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:0})}
+                      <text x={padL-4} y={py+3} fill="rgba(255,255,255,0.28)" fontSize="9" textAnchor="end">
+                        ${pr.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}
                       </text>
                     </g>
                   );
@@ -1115,22 +1155,24 @@ export default function DayeTrading() {
                   const top  = toY(Math.max(c.open,c.close));
                   const bot  = toY(Math.min(c.open,c.close));
                   const bh   = Math.max(1.5, bot-top);
-                  const isLast = i === visible.length-1;
+                  const last = i === visible.length-1;
                   return (
                     <g key={i}>
-                      <line x1={x} y1={toY(c.high)} x2={x} y2={toY(c.low)} stroke={col} strokeWidth="1" opacity={isLast?"1":"0.9"}/>
-                      <rect x={x-cw/2} y={top} width={cw} height={bh} fill={col} rx="1" opacity={isLast?"1":"0.88"}/>
-                      {isLast && <rect x={x-cw/2} y={top} width={cw} height={bh} fill={col} rx="1" opacity="0.4">
-                        <animate attributeName="opacity" values="0.4;0.8;0.4" dur="1s" repeatCount="indefinite"/>
-                      </rect>}
+                      <line x1={x} y1={toY(c.high)} x2={x} y2={toY(c.low)} stroke={col} strokeWidth="1.2" opacity="0.9"/>
+                      <rect x={x-cw/2} y={top} width={cw} height={bh} fill={col} rx="1.5" opacity="0.92"/>
+                      {last && playing && (
+                        <rect x={x-cw/2} y={top} width={cw} height={bh} fill={col} rx="1.5" opacity="0">
+                          <animate attributeName="opacity" values="0;0.5;0" dur="1.2s" repeatCount="indefinite"/>
+                        </rect>
+                      )}
                     </g>
                   );
                 })}
 
-                {/* Current price line */}
-                <line x1={padL} y1={toY(currentPrice)} x2={W-padR} y2={toY(currentPrice)} stroke="#a78bfa" strokeWidth="1" strokeDasharray="4,3" opacity="0.7"/>
-                <rect x={W-padR} y={toY(currentPrice)-8} width={padR+48} height={16} fill="#7c3aed" rx="3"/>
-                <text x={W-padR+4} y={toY(currentPrice)+4} fill="#fff" fontSize="9" fontWeight="bold">
+                {/* Live price line */}
+                <line x1={padL} y1={toY(currentPrice)} x2={W-padR} y2={toY(currentPrice)} stroke="#7c3aed" strokeWidth="1" strokeDasharray="5,3" opacity="0.7"/>
+                <rect x={W-padR+1} y={toY(currentPrice)-8} width={58} height={16} fill="#7c3aed" rx="3" opacity="0.9"/>
+                <text x={W-padR+5} y={toY(currentPrice)+4} fill="#fff" fontSize="8.5" fontWeight="bold">
                   ${currentPrice.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}
                 </text>
 
@@ -1145,65 +1187,76 @@ export default function DayeTrading() {
                   if (d.type==="horizontal") return (
                     <g key={i}>
                       <line x1={padL} y1={d.y} x2={W-padR} y2={d.y} stroke={lineColor.horizontal} strokeWidth="1.5" strokeDasharray="6,3" opacity="0.8"/>
-                      <text x={padL+4} y={d.y-4} fill={lineColor.horizontal} fontSize="9">{lineLabel.horizontal}</text>
+                      <rect x={padL} y={d.y-9} width={58} height={13} fill="rgba(234,179,8,0.15)" rx="3"/>
+                      <text x={padL+4} y={d.y+1} fill={lineColor.horizontal} fontSize="8" fontWeight="bold">H-LINE</text>
                     </g>
                   );
                   return (
                     <g key={i}>
-                      <line x1={d.x1} y1={d.y1} x2={d.x2} y2={d.y2} stroke={lineColor[d.type]||"#a78bfa"} strokeWidth="2" opacity="0.85"/>
-                      <text x={(d.x1+d.x2)/2} y={(d.y1+d.y2)/2-6} fill={lineColor[d.type]||"#a78bfa"} fontSize="9">{lineLabel[d.type]||d.type}</text>
+                      <line x1={d.x1} y1={d.y1} x2={d.x2} y2={d.y2} stroke={lineColor[d.type]||"#a78bfa"} strokeWidth="2" opacity="0.85" strokeLinecap="round"/>
+                      <circle cx={d.x1} cy={d.y1} r="3" fill={lineColor[d.type]||"#a78bfa"} opacity="0.7"/>
+                      <circle cx={d.x2} cy={d.y2} r="3" fill={lineColor[d.type]||"#a78bfa"} opacity="0.7"/>
+                      <text x={(d.x1+d.x2)/2} y={Math.min(d.y1,d.y2)-6} fill={lineColor[d.type]||"#a78bfa"} fontSize="9" textAnchor="middle" fontWeight="bold">
+                        {lineLabel[d.type]||d.type}
+                      </text>
                     </g>
                   );
                 })}
 
-                {/* Pending point indicator */}
+                {/* Pending point */}
                 {pendingPt && (
-                  <circle cx={pendingPt.x} cy={pendingPt.y} r="5" fill="#a78bfa" stroke="#fff" strokeWidth="1.5" opacity="0.7"/>
-                )}
-
-                {/* Tooltip */}
-                {tooltip && (
                   <g>
-                    <rect x={Math.min(tooltip.x, W-120)} y={padT} width={110} height={66} fill="rgba(10,10,20,0.92)" stroke="rgba(124,58,237,0.4)" rx="6"/>
-                    <text x={Math.min(tooltip.x,W-120)+8} y={padT+14} fill="#a78bfa" fontSize="9" fontWeight="bold">OHLC</text>
-                    {[["O",tooltip.c.open],["H",tooltip.c.high],["L",tooltip.c.low],["C",tooltip.c.close]].map(([lbl,val],i)=>(
-                      <text key={lbl} x={Math.min(tooltip.x,W-120)+8} y={padT+26+i*11} fill="rgba(255,255,255,0.8)" fontSize="9">
-                        {lbl}: ${val.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}
-                      </text>
-                    ))}
+                    <circle cx={pendingPt.x} cy={pendingPt.y} r="5" fill="#a78bfa" stroke="#fff" strokeWidth="1.5" opacity="0.7"/>
+                    <circle cx={pendingPt.x} cy={pendingPt.y} r="12" fill="none" stroke="#a78bfa" strokeWidth="1" strokeDasharray="3,2" opacity="0.4"/>
                   </g>
                 )}
+
+                {/* OHLC Tooltip */}
+                {tooltip && (() => {
+                  const tx = Math.min(tooltip.x, W-120);
+                  return (
+                    <g>
+                      <rect x={tx} y={padT+2} width={114} height={70} fill="rgba(8,8,20,0.95)" stroke="rgba(124,58,237,0.35)" rx="6"/>
+                      <text x={tx+8} y={padT+15} fill="#a78bfa" fontSize="9" fontWeight="bold">OHLC · {tf}</text>
+                      {[["O",tooltip.c.open],["H",tooltip.c.high],["L",tooltip.c.low],["C",tooltip.c.close]].map(([lbl,val],i)=>(
+                        <g key={lbl}>
+                          <text x={tx+8}  y={padT+27+i*12} fill="rgba(255,255,255,0.5)" fontSize="9">{lbl}:</text>
+                          <text x={tx+22} y={padT+27+i*12} fill="rgba(255,255,255,0.9)" fontSize="9">
+                            ${val.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}
+                          </text>
+                        </g>
+                      ))}
+                    </g>
+                  );
+                })()}
 
                 {/* X-axis labels */}
                 {visible.map((c,i)=>{
                   if (i % Math.max(1,Math.floor(visible.length/8)) !== 0) return null;
-                  return (
-                    <text key={i} x={toX(i)} y={H-4} fill="rgba(255,255,255,0.25)" fontSize="8" textAnchor="middle">
-                      {tf==="1D"?`D${start+i+1}`:tf==="1h"?`${(start+i)%24}h`:tf==="4h"?`${Math.floor((start+i)*4)}h`:`${start+i+1}`}
-                    </text>
-                  );
+                  const lbl = tf==="1m"?`${start+i+1}m`:tf==="5m"?`${(start+i+1)*5}m`:tf==="15m"?`${(start+i+1)*15}m`:tf==="30m"?`${(start+i+1)*30}m`:tf==="1h"?`${start+i+1}h`:tf==="4h"?`${(start+i+1)*4}h`:`D${start+i+1}`;
+                  return <text key={i} x={toX(i)} y={H-4} fill="rgba(255,255,255,0.2)" fontSize="8" textAnchor="middle">{lbl}</text>;
                 })}
               </svg>
             </div>
 
-            {/* Guide toggle */}
-            <div style={{padding:"10px 18px",borderTop:"1px solid rgba(255,255,255,0.05)"}}>
-              <button onClick={()=>setShowGuide(g=>!g)} style={{...S.btnSec,width:"100%",padding:"8px",fontSize:13,justifyContent:"center",gap:8}}>
-                {showGuide?"▲ Hide":"📖 Show"} Chart Reading Guide
+            {/* Chart Reading Guide toggle */}
+            <div style={{padding:"10px 16px",borderTop:"1px solid rgba(255,255,255,0.05)"}}>
+              <button onClick={()=>setShowGuide(g=>!g)} style={{...S.btnSec,width:"100%",padding:"8px",fontSize:13,justifyContent:"center",gap:6}}>
+                {showGuide?"▲ Hide Guide":"📖 Chart Reading Guide"}
               </button>
               {showGuide && (
-                <div style={{marginTop:14,display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:12}}>
+                <div style={{marginTop:12,display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(190px,1fr))",gap:10}}>
                   {[
-                    {title:"🕯 Candlesticks",    text:"Each candle shows open, high, low, and close price. Green = price went up. Red = price went down."},
-                    {title:"📊 Market Structure",text:"Markets move in trends — higher highs & higher lows = uptrend. Lower highs & lower lows = downtrend."},
-                    {title:"🟢 Support",          text:"A price level where buyers tend to step in, preventing price from falling further."},
-                    {title:"🔴 Resistance",       text:"A price level where sellers tend to step in, preventing price from rising further."},
-                    {title:"📐 Trendlines",       text:"Lines connecting highs or lows to visualize the direction of the trend."},
-                    {title:"⏱ Timeframes",        text:"1m=1 minute per candle. 1h=1 hour. 1D=1 day. Longer timeframes = bigger picture."},
+                    {t:"🕯 Candlesticks",     d:"Each candle = Open, High, Low, Close. Green = up. Red = down."},
+                    {t:"📊 Market Structure", d:"Higher highs & lows = uptrend. Lower highs & lows = downtrend."},
+                    {t:"🟢 Support",          d:"Price level where buyers step in and stop the fall."},
+                    {t:"🔴 Resistance",       d:"Price level where sellers step in and stop the rise."},
+                    {t:"📐 Trendlines",       d:"Lines connecting swing highs or lows to show trend direction."},
+                    {t:"⏱ Timeframes",        d:"1m = each candle is 1 min. 1D = each candle is 1 full day."},
                   ].map(g=>(
-                    <div key={g.title} style={{background:"rgba(124,58,237,0.07)",border:"1px solid rgba(124,58,237,0.15)",borderRadius:10,padding:"12px 14px"}}>
-                      <div style={{fontWeight:700,fontSize:13,marginBottom:5}}>{g.title}</div>
-                      <div style={{fontSize:12,color:"rgba(255,255,255,0.55)",lineHeight:1.6}}>{g.text}</div>
+                    <div key={g.t} style={{background:"rgba(124,58,237,0.07)",border:"1px solid rgba(124,58,237,0.15)",borderRadius:9,padding:"10px 12px"}}>
+                      <div style={{fontWeight:700,fontSize:12,marginBottom:4}}>{g.t}</div>
+                      <div style={{fontSize:11,color:"rgba(255,255,255,0.5)",lineHeight:1.6}}>{g.d}</div>
                     </div>
                   ))}
                 </div>
@@ -1211,11 +1264,11 @@ export default function DayeTrading() {
             </div>
           </div>
 
-          {/* ─ ORDER PANEL ─ */}
+          {/* ─── ORDER PANEL ─── */}
           <div style={{display:"flex",flexDirection:"column",gap:14}}>
             <div style={S.card}>
-              <h3 style={{...S.h3,marginBottom:14}}>Place Order</h3>
-              <div style={{display:"flex",background:"rgba(255,255,255,0.05)",borderRadius:10,marginBottom:14,padding:4}}>
+              <h3 style={{...S.h3,marginBottom:12}}>Place Order</h3>
+              <div style={{display:"flex",background:"rgba(255,255,255,0.05)",borderRadius:10,marginBottom:12,padding:4}}>
                 {["BUY","SELL"].map(s=>(
                   <div key={s} onClick={()=>setTradeSide(s)} style={{flex:1,textAlign:"center",padding:"9px",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:13,background:tradeSide===s?(s==="BUY"?"rgba(34,197,94,0.25)":"rgba(239,68,68,0.25)"):"transparent",color:tradeSide===s?(s==="BUY"?"#22c55e":"#ef4444"):"rgba(255,255,255,0.4)",transition:"all 0.2s",userSelect:"none"}}>
                     {s}
@@ -1243,7 +1296,7 @@ export default function DayeTrading() {
                 </div>
                 <div style={{display:"flex",justifyContent:"space-between"}}>
                   <span style={S.muted}>Buying Power</span>
-                  <span style={{color:"#a78bfa"}}>$8,240.00</span>
+                  <span style={{color:"#a78bfa",fontWeight:600}}>$8,240.00</span>
                 </div>
               </div>
               <button style={{...(tradeSide==="BUY"?S.btnGreen:S.btnRed),width:"100%",padding:12,fontSize:14,fontWeight:700}} onClick={handleTrade}>
@@ -1252,23 +1305,23 @@ export default function DayeTrading() {
               {tradeMsg&&<div style={{marginTop:8,background:"rgba(34,197,94,0.1)",border:"1px solid rgba(34,197,94,0.3)",borderRadius:8,padding:"8px 12px",fontSize:12,color:"#22c55e"}}>{tradeMsg}</div>}
             </div>
 
-            {/* Drawing tools legend */}
+            {/* Drawing tools panel */}
             <div style={S.card}>
               <div style={{fontWeight:700,fontSize:13,marginBottom:10,color:"#a78bfa"}}>📐 Drawing Tools</div>
               {TOOLS.map(t=>(
                 <div key={t.id} onClick={()=>setTool(tool===t.id?null:t.id)}
                   style={{display:"flex",alignItems:"center",gap:8,padding:"7px 10px",borderRadius:8,cursor:"pointer",marginBottom:4,background:tool===t.id?"rgba(124,58,237,0.15)":"transparent",border:`1px solid ${tool===t.id?"rgba(124,58,237,0.3)":"transparent"}`,transition:"all 0.15s"}}>
-                  <span>{t.icon}</span>
+                  <span style={{fontSize:14}}>{t.icon}</span>
                   <div style={{flex:1}}>
                     <div style={{fontSize:12,fontWeight:600,color:tool===t.id?"#c4b5fd":"rgba(255,255,255,0.7)"}}>{t.label}</div>
                     <div style={{fontSize:10,color:"rgba(255,255,255,0.3)"}}>{t.tip}</div>
                   </div>
-                  {tool===t.id&&<span style={{fontSize:10,color:"#a78bfa",fontWeight:700}}>ACTIVE</span>}
+                  {tool===t.id&&<span style={{fontSize:9,color:"#a78bfa",fontWeight:700,background:"rgba(124,58,237,0.2)",padding:"2px 6px",borderRadius:4}}>ON</span>}
                 </div>
               ))}
-              {drawings.length>0&&(
+              {drawings.length > 0 && (
                 <button onClick={()=>{setDrawings([]);setPendingPt(null);}} style={{...S.btnSec,width:"100%",marginTop:8,padding:"7px",fontSize:12,color:"#f87171",borderColor:"rgba(239,68,68,0.3)"}}>
-                  🗑 Clear All Drawings ({drawings.length})
+                  🗑 Clear ({drawings.length})
                 </button>
               )}
             </div>
@@ -1278,35 +1331,33 @@ export default function DayeTrading() {
         {/* Positions + History */}
         <div style={{display:"grid",gridTemplateColumns:mobile?"1fr":"1fr 1fr",gap:18}}>
           <div style={S.card}>
-            <h3 style={{...S.h3,marginBottom:14}}>Open Positions</h3>
+            <h3 style={{...S.h3,marginBottom:12}}>Open Positions</h3>
             <div style={{overflowX:"auto"}}>
-              <table style={{...S.table,minWidth:360}}>
+              <table style={{...S.table,minWidth:340}}>
                 <thead><tr><th style={S.th}>Symbol</th><th style={S.th}>Qty</th><th style={S.th}>Avg</th><th style={S.th}>Current</th><th style={S.th}>P&L</th></tr></thead>
                 <tbody>
                   {tradeHistory.filter(t=>t.type==="BUY").length===0 ? (
                     <tr><td colSpan={5} style={{...S.td,textAlign:"center",color:"rgba(255,255,255,0.3)",padding:20}}>No open positions yet.</td></tr>
-                  ) : (
-                    tradeHistory.filter(t=>t.type==="BUY").slice(0,5).map((t,i)=>{
-                      const pl = (currentPrice - t.price)*t.qty;
-                      return (
-                        <tr key={i}>
-                          <td style={{...S.td,fontWeight:700}}>{t.symbol}</td>
-                          <td style={S.td}>{t.qty}</td>
-                          <td style={S.td}>${t.price.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
-                          <td style={S.td}>${currentPrice.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
-                          <td style={{...S.td,color:pl>=0?"#22c55e":"#ef4444",fontWeight:600}}>{pl>=0?"+":""}${pl.toFixed(2)}</td>
-                        </tr>
-                      );
-                    })
-                  )}
+                  ) : tradeHistory.filter(t=>t.type==="BUY").slice(0,5).map((t,i)=>{
+                    const pl=(currentPrice-t.price)*t.qty;
+                    return (
+                      <tr key={i}>
+                        <td style={{...S.td,fontWeight:700}}>{t.symbol}</td>
+                        <td style={S.td}>{t.qty}</td>
+                        <td style={S.td}>${t.price.toLocaleString(undefined,{maximumFractionDigits:2})}</td>
+                        <td style={S.td}>${currentPrice.toLocaleString(undefined,{maximumFractionDigits:2})}</td>
+                        <td style={{...S.td,color:pl>=0?"#22c55e":"#ef4444",fontWeight:600}}>{pl>=0?"+":""}${pl.toFixed(2)}</td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
           </div>
           <div style={S.card}>
-            <h3 style={{...S.h3,marginBottom:14}}>Trade History</h3>
+            <h3 style={{...S.h3,marginBottom:12}}>Trade History</h3>
             <div style={{overflowX:"auto"}}>
-              <table style={{...S.table,minWidth:340}}>
+              <table style={{...S.table,minWidth:320}}>
                 <thead><tr><th style={S.th}>Time</th><th style={S.th}>Symbol</th><th style={S.th}>Type</th><th style={S.th}>Price</th><th style={S.th}>Total</th></tr></thead>
                 <tbody>
                   {tradeHistory.length===0 ? (
@@ -1316,8 +1367,8 @@ export default function DayeTrading() {
                       <td style={{...S.td,color:"rgba(255,255,255,0.4)",fontSize:11}}>{t.time}</td>
                       <td style={{...S.td,fontWeight:700}}>{t.symbol}</td>
                       <td style={{...S.td,color:t.type==="BUY"?"#22c55e":"#ef4444",fontWeight:600}}>{t.type}</td>
-                      <td style={S.td}>${t.price.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
-                      <td style={S.td}>${t.total.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+                      <td style={S.td}>${t.price.toLocaleString(undefined,{maximumFractionDigits:2})}</td>
+                      <td style={S.td}>${t.total.toLocaleString(undefined,{maximumFractionDigits:2})}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -1328,6 +1379,7 @@ export default function DayeTrading() {
       </div>
     );
   };
+
 
   // ── MARKET MAP ──────────────────────────────────────────────────────────────
   const PageMarketMap = () => (
