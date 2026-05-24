@@ -297,7 +297,6 @@ function AuthPage({ authMode, setAuthMode, onSuccess, onDemo, onBack }) {
   const rememberedEmail    = (() => { try { return localStorage.getItem("daye_remembered_email")    || ""; } catch(e) { return ""; } })();
   const rememberedPassword = (() => { try { return localStorage.getItem("daye_remembered_password") || ""; } catch(e) { return ""; } })();
   const wasRemembered      = (() => { try { return localStorage.getItem("daye_remember_me") === "true"; } catch(e) { return false; } })();
-
   const [fields, setFields]               = useState({ firstName:"", lastName:"", email: wasRemembered ? rememberedEmail : "", password: wasRemembered ? rememberedPassword : "" });
   const [touched, setTouched]             = useState({ firstName:false, lastName:false, email: wasRemembered, password: wasRemembered });
   const [submitAttempted, setSubmitAttempted] = useState(false);
@@ -329,48 +328,58 @@ function AuthPage({ authMode, setAuthMode, onSuccess, onDemo, onBack }) {
     const hasErrors = errors.email || errors.password ||
       (authMode==="signup" && (errors.firstName || errors.lastName));
     if (!hasErrors) {
-      let displayName, displayEmail;
+      let firstName, lastName, displayEmail;
+
       if (authMode === "signup") {
-        const first = fields.firstName.trim();
-        const last  = fields.lastName.trim();
-        displayName  = last ? `${first} ${last}` : first;
+        firstName    = fields.firstName.trim();
+        lastName     = fields.lastName.trim();
         displayEmail = fields.email.trim();
-        onSuccess({ name: displayName, firstName: first, lastName: last, email: displayEmail });
-        return; // signup handled, exit early
+        // Remember Me for signup
+        try {
+          if (rememberMe) {
+            localStorage.setItem("daye_remembered_email",     displayEmail);
+            localStorage.setItem("daye_remembered_password",  fields.password);
+            localStorage.setItem("daye_remembered_firstname", firstName);
+            localStorage.setItem("daye_remembered_lastname",  lastName);
+            localStorage.setItem("daye_remember_me",          "true");
+          } else {
+            ["email","password","firstname","lastname"].forEach(k=>localStorage.removeItem(`daye_remembered_${k}`));
+            localStorage.removeItem("daye_remember_me");
+          }
+        } catch(e){}
+        onSuccess({ firstName, lastName, name:`${firstName}${lastName?" "+lastName:""}`, email:displayEmail });
+        return;
       } else {
+        // LOGIN — restore saved first/last or derive from email
         displayEmail = fields.email.trim();
-        // Try to restore the saved name from a previous signup/login
-        const savedName = (() => { try { return localStorage.getItem("daye_remembered_name") || ""; } catch(e) { return ""; } })();
-        if (savedName) {
-          displayName = savedName;
+        const savedFirst = (() => { try { return localStorage.getItem("daye_remembered_firstname")||""; } catch(e){ return ""; } })();
+        const savedLast  = (() => { try { return localStorage.getItem("daye_remembered_lastname") ||""; } catch(e){ return ""; } })();
+        if (savedFirst) {
+          firstName = savedFirst;
+          lastName  = savedLast;
         } else {
+          // Derive from email: split on dots, dashes, numbers; capitalise each word
           const raw = displayEmail.split("@")[0];
-          displayName = raw
-            .replace(/[._\-0-9]/g, " ")
-            .trim()
-            .replace(/\s+/g, " ")
-            .replace(/\b\w/g, c => c.toUpperCase()) || "Trader";
+          const parts = raw.replace(/[._\-0-9]+/g," ").trim().split(/\s+/).filter(Boolean).map(w=>w.charAt(0).toUpperCase()+w.slice(1));
+          firstName = parts[0] || "Trader";
+          lastName  = parts.slice(1).join(" ");
         }
+        // Remember Me for login
+        try {
+          if (rememberMe) {
+            localStorage.setItem("daye_remembered_email",     displayEmail);
+            localStorage.setItem("daye_remembered_password",  fields.password);
+            localStorage.setItem("daye_remembered_firstname", firstName);
+            localStorage.setItem("daye_remembered_lastname",  lastName);
+            localStorage.setItem("daye_remember_me",          "true");
+          } else {
+            ["email","password","firstname","lastname"].forEach(k=>localStorage.removeItem(`daye_remembered_${k}`));
+            localStorage.removeItem("daye_remember_me");
+          }
+        } catch(e){}
+        onSuccess({ firstName, lastName, name:`${firstName}${lastName?" "+lastName:""}`, email:displayEmail });
       }
-
-      // Handle Remember Me — save email, password, and name
-      try {
-        if (rememberMe) {
-          localStorage.setItem("daye_remembered_email",    fields.email.trim());
-          localStorage.setItem("daye_remembered_password", fields.password);
-          localStorage.setItem("daye_remembered_name",     displayName);
-          localStorage.setItem("daye_remember_me",         "true");
-        } else {
-          localStorage.removeItem("daye_remembered_email");
-          localStorage.removeItem("daye_remembered_password");
-          localStorage.removeItem("daye_remembered_name");
-          localStorage.removeItem("daye_remember_me");
-        }
-      } catch(e) {}
-
-      onSuccess({ name: displayName, email: displayEmail });
     }
-  };
 
   const S = {
     page:   { minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", padding:"24px 16px", position:"relative", background:"#080810" },
@@ -542,7 +551,7 @@ function AuthPage({ authMode, setAuthMode, onSuccess, onDemo, onBack }) {
 export default function DayeTrading() {
   const [page, setPage]               = useState("landing");
   const [authMode, setAuthMode]       = useState("login");
-  const [currentUser, setCurrentUser] = useState({ name:"Trader", email:"", social:"" });
+  const [currentUser, setCurrentUser] = useState({ name:"Trader", firstName:"Trader", lastName:"", email:"", social:"" });
   const [selectedLesson, setSelectedLesson] = useState(null);
   const [selectedQuiz, setSelectedQuiz]     = useState(null);
   const [quizState, setQuizState]           = useState({ started:false, current:0, answers:[], done:false });
@@ -677,7 +686,7 @@ export default function DayeTrading() {
         </p>
         <div style={{display:"flex",gap:16,justifyContent:"center",flexWrap:"wrap"}}>
           <button style={{...S.btnPrimary,padding:"15px 32px",fontSize:16,borderRadius:12}} onClick={()=>{setAuthMode("signup");nav("auth");}}>🎓 Start Learning</button>
-          <button style={{...S.btnSec,padding:"15px 32px",fontSize:16,borderRadius:12}} onClick={()=>{setCurrentUser({name:"Demo User",email:"",social:"Demo"});nav("simulator");}}>📈 Try Demo Trading</button>
+          <button style={{...S.btnSec,padding:"15px 32px",fontSize:16,borderRadius:12}} onClick={()=>{setCurrentUser({name:"Demo User",firstName:"Demo",lastName:"User",email:"",social:"Demo"});nav("simulator");}}>📈 Try Demo Trading</button>
         </div>
         <p style={{marginTop:20,fontSize:12,color:"rgba(255,255,255,0.25)"}}>No credit card required · 100% free · Simulated data only</p>
       </div>
@@ -720,7 +729,9 @@ export default function DayeTrading() {
       <div style={{marginBottom:24}}>
         <div style={{fontSize:13,color:"#a78bfa",fontWeight:600,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:6}}>Dashboard</div>
         <h1 style={{...S.h1,marginBottom:8,fontSize:"clamp(22px,4vw,36px)"}}>
-          Welcome, <span style={{color:"#a78bfa"}}>{currentUser.name}</span> 👋
+          Welcome, <span style={{color:"#a78bfa"}}>
+            {currentUser.firstName || "Trader"}{currentUser.lastName ? " " + currentUser.lastName : ""}
+          </span> 👋
         </h1>
         <p style={S.muted}>Keep learning and building your trading skills!</p>
       </div>
@@ -1624,11 +1635,11 @@ export default function DayeTrading() {
 
   // ── PROFILE ─────────────────────────────────────────────────────────────────
   const PageProfile = () => {
-    // Support both split storage (firstName/lastName) and legacy single name
-    const firstName = currentUser.firstName || currentUser.name.split(" ")[0] || "";
-    const lastName  = currentUser.lastName  || currentUser.name.split(" ").slice(1).join(" ") || "";
-    const nameParts = [firstName, lastName].filter(Boolean);
-    const initials  = nameParts.map(p=>p[0]).join("").toUpperCase().slice(0,2);
+    // Always use the dedicated firstName/lastName fields — never split the combined name
+    const firstName = (currentUser.firstName || "").trim();
+    const lastName  = (currentUser.lastName  || "").trim();
+    const initials  = [firstName[0], lastName[0]].filter(Boolean).join("").toUpperCase() || "?";
+    const fullName  = lastName ? `${firstName} ${lastName}` : firstName || "Trader";
     const doneCount = lessons.beginner.filter(l=>l.done).length + lessons.intermediate.filter(l=>l.done).length + lessons.advanced.filter(l=>l.done).length;
 
     const handlePicUpload = (e) => {
@@ -1640,17 +1651,18 @@ export default function DayeTrading() {
     };
 
     const saveEditName = () => {
-      const f = editName.first.trim();
-      const l = editName.last.trim();
+      const f = (editName.first  || "").trim();
+      const l = (editName.last   || "").trim();
       if (f) {
-        setCurrentUser(prev => ({
-          ...prev,
-          firstName: f,
-          lastName:  l,
-          name: l ? `${f} ${l}` : f,
-        }));
+        const newName = l ? `${f} ${l}` : f;
+        setCurrentUser(prev => ({ ...prev, firstName:f, lastName:l, name:newName }));
         // Update remembered name too
-        try { if (localStorage.getItem("daye_remember_me")==="true") localStorage.setItem("daye_remembered_name", l ? `${f} ${l}` : f); } catch(e){}
+        try {
+          if (localStorage.getItem("daye_remember_me")==="true") {
+            localStorage.setItem("daye_remembered_firstname", f);
+            localStorage.setItem("daye_remembered_lastname",  l);
+          }
+        } catch(e){}
       }
       setEditingName(false);
     };
@@ -1674,17 +1686,49 @@ export default function DayeTrading() {
           <div style={{flex:1,minWidth:0}}>
             <div style={{fontSize:11,color:"#a78bfa",fontWeight:600,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:4}}>Your Profile</div>
             {editingName ? (
-              <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:8,alignItems:"center"}}>
-                <input defaultValue={firstName} onChange={e=>setEditName(p=>({...p,first:e.target.value}))} placeholder="First" style={{...S.input,width:120,padding:"8px 12px",fontSize:14}}/>
-                <input defaultValue={lastName} onChange={e=>setEditName(p=>({...p,last:e.target.value}))} placeholder="Last" style={{...S.input,width:120,padding:"8px 12px",fontSize:14}}/>
-                <button style={{...S.btnPrimary,padding:"8px 16px",fontSize:13}} onClick={saveEditName}>Save</button>
-                <button style={{...S.btnSec,padding:"8px 14px",fontSize:13}} onClick={()=>setEditingName(false)}>Cancel</button>
+              <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:8,alignItems:"flex-start"}}>
+                <div style={{display:"flex",flexDirection:"column",gap:3}}>
+                  <label style={{fontSize:10,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.05em"}}>First Name</label>
+                  <input
+                    defaultValue={firstName}
+                    onChange={e=>setEditName(p=>({...p,first:e.target.value}))}
+                    placeholder="First"
+                    style={{...S.input,width:130,padding:"8px 12px",fontSize:14}}
+                  />
+                </div>
+                <div style={{display:"flex",flexDirection:"column",gap:3}}>
+                  <label style={{fontSize:10,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.05em"}}>Last Name</label>
+                  <input
+                    defaultValue={lastName}
+                    onChange={e=>setEditName(p=>({...p,last:e.target.value}))}
+                    placeholder="Last"
+                    style={{...S.input,width:130,padding:"8px 12px",fontSize:14}}
+                  />
+                </div>
+                <div style={{display:"flex",gap:8,alignItems:"flex-end",paddingBottom:2}}>
+                  <button style={{...S.btnPrimary,padding:"8px 16px",fontSize:13}} onClick={saveEditName}>Save</button>
+                  <button style={{...S.btnSec,padding:"8px 14px",fontSize:13}} onClick={()=>setEditingName(false)}>Cancel</button>
+                </div>
               </div>
             ) : (
-              <div style={{display:"flex",alignItems:"baseline",gap:10,marginBottom:4,flexWrap:"wrap"}}>
-                <span style={{fontSize:"clamp(22px,4vw,32px)",fontWeight:800,letterSpacing:"-0.03em",color:"#fff",lineHeight:1.1}}>{firstName}{" "}</span>
-                {lastName && <span style={{fontSize:"clamp(22px,4vw,32px)",fontWeight:800,letterSpacing:"-0.03em",color:"#a78bfa",lineHeight:1.1}}>{lastName}</span>}
-                <button style={{...S.btnSec,padding:"4px 10px",fontSize:11}} onClick={()=>{setEditName({first:firstName,last:lastName});setEditingName(true);}}>✏️ Edit</button>
+              <div style={{display:"flex",alignItems:"baseline",gap:6,marginBottom:4,flexWrap:"wrap"}}>
+                <span style={{fontSize:"clamp(22px,4vw,32px)",fontWeight:800,letterSpacing:"-0.03em",color:"#fff",lineHeight:1.1}}>
+                  {firstName}
+                </span>
+                {lastName && (
+                  <span style={{fontSize:"clamp(22px,4vw,32px)",fontWeight:800,letterSpacing:"-0.03em",color:"#a78bfa",lineHeight:1.1}}>
+                    {lastName}
+                  </span>
+                )}
+                <button
+                  style={{...S.btnSec,padding:"4px 10px",fontSize:11,marginLeft:4}}
+                  onClick={()=>{
+                    setEditName({ first: firstName, last: lastName });
+                    setEditingName(true);
+                  }}
+                >
+                  ✏️ Edit
+                </button>
               </div>
             )}
             <div style={{fontSize:13,color:"rgba(255,255,255,0.4)",marginBottom:12}}>
@@ -1738,7 +1782,7 @@ export default function DayeTrading() {
           ))}
         </div>
       </div>
-      <button style={{...S.btnSec,color:"#ef4444",borderColor:"rgba(239,68,68,0.3)"}} onClick={()=>{setCurrentUser({name:"Trader",email:"",social:""});nav("landing");}}>
+      <button style={{...S.btnSec,color:"#ef4444",borderColor:"rgba(239,68,68,0.3)"}} onClick={()=>{setCurrentUser({name:"Trader",firstName:"Trader",lastName:"",email:"",social:""});nav("landing");}}>
         Log Out
       </button>
     </div>
@@ -1764,8 +1808,13 @@ export default function DayeTrading() {
       <AuthPage
         authMode={authMode}
         setAuthMode={setAuthMode}
-        onSuccess={(userData) => { setCurrentUser(userData); nav("dashboard"); }}
-        onDemo={() => { setCurrentUser({ name:"Demo User", email:"", social:"Demo" }); nav("dashboard"); }}
+        onSuccess={(userData) => {
+          const fn = userData.firstName || userData.name.split(" ")[0] || "Trader";
+          const ln = userData.lastName  || userData.name.split(" ").slice(1).join(" ") || "";
+          setCurrentUser({ ...userData, firstName:fn, lastName:ln, name:`${fn}${ln?" "+ln:""}` });
+          nav("dashboard");
+        }}
+        onDemo={() => { setCurrentUser({ name:"Demo User", firstName:"Demo", lastName:"User", email:"", social:"Demo" }); nav("dashboard"); }}
         onBack={() => nav("landing")}
       />
     </div>
