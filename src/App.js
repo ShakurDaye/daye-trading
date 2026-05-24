@@ -297,6 +297,33 @@ function ValidatedField({ label, id, type="text", placeholder, value, onChange, 
   );
 }
 
+// ─── SOCIAL SIGN-IN BUTTON ────────────────────────────────────────────────────
+// OAuth is not connected — shows a "coming soon" message instead of logging in.
+function SocialButton({ label, provider, style }) {
+  const [msg, setMsg] = useState(false);
+  const handleClick = () => {
+    setMsg(true);
+    setTimeout(() => setMsg(false), 4000);
+  };
+  return (
+    <div style={{marginBottom:10}}>
+      <button style={style} onClick={handleClick}>{label}</button>
+      {msg && (
+        <div style={{
+          marginTop:6, padding:"9px 14px", borderRadius:8, fontSize:12,
+          background:"rgba(124,58,237,0.08)", border:"1px solid rgba(124,58,237,0.25)",
+          color:"#c4b5fd", display:"flex", alignItems:"center", gap:8, lineHeight:1.5,
+        }}>
+          🔒 <span>
+            <strong>{provider==="google"?"Google":"Apple"} sign-in</strong> is coming soon.
+            Please use your email and password to sign in for now.
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // AUTH PAGE — top-level component so React never remounts inputs on re-render
 // ─────────────────────────────────────────────────────────────────────────────
@@ -559,8 +586,13 @@ function AuthPage({ authMode, setAuthMode, onSuccess, onDemo, onBack }) {
           <div style={S.divider}>
             <div style={S.line}/><span style={{color:"rgba(255,255,255,0.35)",fontSize:13}}>or</span><div style={S.line}/>
           </div>
-          <button style={S.btnSec} onClick={()=>onSuccess({ name:"Google User", email:"google@user.com", social:"Google" })}>🔵 Continue with Google</button>
-          <button style={S.btnSec} onClick={()=>onSuccess({ name:"Apple User",  email:"apple@user.com",  social:"Apple"  })}>⚫ Continue with Apple</button>
+          {/* Social sign-in — OAuth not connected yet */}
+          {[
+            { id:"google", label:"🔵 Continue with Google" },
+            { id:"apple",  label:"⚫ Continue with Apple"  },
+          ].map(p => (
+            <SocialButton key={p.id} label={p.label} provider={p.id} style={S.btnSec}/>
+          ))}
 
           <p style={{color:"rgba(255,255,255,0.3)",textAlign:"center",marginTop:16,fontSize:12,lineHeight:1.6}}>
             By continuing you agree to our Terms of Service. This platform uses simulated data only.
