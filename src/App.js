@@ -94,9 +94,17 @@ const BADGES = [
 // ─── VALIDATION RULES ────────────────────────────────────────────────────────
 const VALIDATORS = {
   fullName: (v) => {
-    if (!v.trim()) return "Full name is required.";
-    if (v.trim().length < 2) return "Name must be at least 2 characters.";
-    if (!/^[a-zA-Z\s'\-]+$/.test(v)) return "Name can only contain letters, spaces, hyphens, or apostrophes.";
+    if (!v.trim()) return "This field is required.";
+    if (v.trim().length < 2) return "Must be at least 2 characters.";
+    if (!/^[a-zA-Z\s'\-]+$/.test(v)) return "Letters only — no numbers or symbols.";
+    // Warn if they typed a full name in one field
+    if (!v.trim().includes(" ") && v.trim().length > 10) return "Please enter only your first name here.";
+    return "";
+  },
+  lastName: (v) => {
+    if (!v.trim()) return "Last name is required.";
+    if (v.trim().length < 2) return "Must be at least 2 characters.";
+    if (!/^[a-zA-Z\s'\-]+$/.test(v)) return "Letters only — no numbers or symbols.";
     return "";
   },
   email: (v) => {
@@ -312,7 +320,7 @@ function AuthPage({ authMode, setAuthMode, onSuccess, onDemo, onBack }) {
 
   const errors = {
     firstName: authMode==="signup" ? VALIDATORS.fullName(fields.firstName) : "",
-    lastName:  authMode==="signup" ? VALIDATORS.fullName(fields.lastName)  : "",
+    lastName:  authMode==="signup" ? VALIDATORS.lastName(fields.lastName)  : "",
     email:     VALIDATORS.email(fields.email),
     password:  VALIDATORS.password(fields.password),
   };
@@ -435,25 +443,30 @@ function AuthPage({ authMode, setAuthMode, onSuccess, onDemo, onBack }) {
 
           {/* First + Last Name (signup only) */}
           {authMode==="signup" && (
-            <div style={S.row}>
-              <ValidatedField
-                id="firstName" label="First Name" type="text"
-                placeholder="Jordan"
-                value={fields.firstName}
-                onChange={handleChange("firstName")}
-                error={errors.firstName}
-                touched={touched.firstName || submitAttempted}
-                autoComplete="given-name"
-              />
-              <ValidatedField
-                id="lastName" label="Last Name" type="text"
-                placeholder="Smith"
-                value={fields.lastName}
-                onChange={handleChange("lastName")}
-                error={errors.lastName}
-                touched={touched.lastName || submitAttempted}
-                autoComplete="family-name"
-              />
+            <div>
+              <div style={{fontSize:12,color:"rgba(255,255,255,0.35)",marginBottom:8,background:"rgba(124,58,237,0.08)",border:"1px solid rgba(124,58,237,0.15)",borderRadius:8,padding:"6px 12px"}}>
+                💡 Enter your first and last name in <strong style={{color:"#a78bfa"}}>separate fields</strong> — e.g. First: <em>Shakur</em> · Last: <em>Daye</em>
+              </div>
+              <div style={S.row}>
+                <ValidatedField
+                  id="firstName" label="First Name" type="text"
+                  placeholder="e.g. Shakur"
+                  value={fields.firstName}
+                  onChange={handleChange("firstName")}
+                  error={errors.firstName}
+                  touched={touched.firstName || submitAttempted}
+                  autoComplete="given-name"
+                />
+                <ValidatedField
+                  id="lastName" label="Last Name" type="text"
+                  placeholder="e.g. Daye"
+                  value={fields.lastName}
+                  onChange={handleChange("lastName")}
+                  error={errors.lastName}
+                  touched={touched.lastName || submitAttempted}
+                  autoComplete="family-name"
+                />
+              </div>
             </div>
           )}
 
@@ -591,21 +604,8 @@ export default function DayeTrading() {
     const check = () => setMobile(window.innerWidth < 768);
     check();
     window.addEventListener("resize", check);
-    // One-time fix: if a combined name was stored (e.g. "Shakurdaye"), split it
-    try {
-      const storedFirst = localStorage.getItem("daye_remembered_firstname") || "";
-      const storedLast  = localStorage.getItem("daye_remembered_lastname")  || "";
-      if (storedFirst && !storedLast && storedFirst.length > 3) {
-        const attempt = storedFirst.charAt(0).toUpperCase() + storedFirst.slice(1);
-        const parts   = attempt.replace(/([A-Z][a-z]+)/g," $1").trim().split(/\s+/).filter(Boolean);
-        if (parts.length >= 2) {
-          localStorage.setItem("daye_remembered_firstname", parts[0]);
-          localStorage.setItem("daye_remembered_lastname",  parts.slice(1).join(" "));
-        }
-      }
-      // Remove old single-name key if it exists
-      localStorage.removeItem("daye_remembered_name");
-    } catch(e) {}
+    // Clean up old single-name localStorage key from previous versions
+    try { localStorage.removeItem("daye_remembered_name"); } catch(e) {}
     return () => window.removeEventListener("resize", check);
   }, []);
 
@@ -1754,18 +1754,7 @@ export default function DayeTrading() {
                 <button
                   style={{...S.btnSec,padding:"4px 10px",fontSize:11,marginLeft:4}}
                   onClick={()=>{
-                    let f = firstName;
-                    let l = lastName;
-                    // If lastName is empty and firstName looks like a combined name (e.g. "Shakurdaye"),
-                    // try to split on capital letters: "ShakurDaye" → ["Shakur","Daye"]
-                    if (!l && f && f.length > 2) {
-                      const splitOnCap = f.replace(/([A-Z])/g, ' $1').trim().split(/\s+/);
-                      if (splitOnCap.length >= 2) {
-                        f = splitOnCap[0];
-                        l = splitOnCap.slice(1).join(' ');
-                      }
-                    }
-                    setEditName({ first: f, last: l });
+                    setEditName({ first: firstName, last: lastName });
                     setEditingName(true);
                   }}
                 >
@@ -1851,18 +1840,17 @@ export default function DayeTrading() {
         authMode={authMode}
         setAuthMode={setAuthMode}
         onSuccess={(userData) => {
-          let fn = (userData.firstName || userData.name || "Trader").trim();
-          let ln = (userData.lastName  || "").trim();
-          // If lastName is empty and firstName looks like a combined CamelCase name, split it
-          if (!ln && fn && fn.length > 3) {
-            const attempt = fn.charAt(0).toUpperCase() + fn.slice(1);
-            const parts   = attempt.replace(/([A-Z][a-z]+)/g," $1").trim().split(/\s+/).filter(Boolean);
-            if (parts.length >= 2) {
-              fn = parts[0];
-              ln = parts.slice(1).join(" ");
-            }
-          }
-          setCurrentUser({ ...userData, firstName:fn, lastName:ln, name:`${fn}${ln?" "+ln:""}` });
+          // Trust whatever firstName/lastName came directly from the form
+          // These are already set correctly by signup
+          const fn = (userData.firstName || "").trim();
+          const ln = (userData.lastName  || "").trim();
+          const finalName = fn && ln ? `${fn} ${ln}` : fn || "Trader";
+          setCurrentUser({
+            ...userData,
+            firstName: fn || "Trader",
+            lastName:  ln,
+            name:      finalName,
+          });
           nav("dashboard");
         }}
         onDemo={() => { setCurrentUser({ name:"Demo User", firstName:"Demo", lastName:"User", email:"", social:"Demo" }); nav("dashboard"); }}
