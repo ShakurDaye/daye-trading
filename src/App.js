@@ -358,9 +358,23 @@ function AuthPage({ authMode, setAuthMode, onSuccess, onDemo, onBack }) {
           firstName = savedFirst;
           lastName  = savedLast;
         } else {
-          // Derive from email: split on dots, dashes, numbers; capitalise each word
+          // Derive from email: split on dots, dashes, numbers first
+          // Then try camelCase split: "shakurdaye" → look for capital transition opportunities
           const raw = displayEmail.split("@")[0];
-          const parts = raw.replace(/[._\-0-9]+/g," ").trim().split(/\s+/).filter(Boolean).map(w=>w.charAt(0).toUpperCase()+w.slice(1));
+          // Remove numbers, replace separators with spaces
+          const cleaned = raw.replace(/[0-9]/g,"").replace(/[._\-]/g," ").trim();
+          let parts = cleaned.split(/\s+/).filter(Boolean);
+          if (parts.length === 1 && parts[0].length > 3) {
+            // Single word — try to split camelCase or by common name length heuristic
+            const word = parts[0];
+            // Capitalise first letter to try camelCase detection
+            const camelAttempt = word.charAt(0).toUpperCase() + word.slice(1);
+            const camelSplit = camelAttempt.replace(/([A-Z][a-z]+)/g, ' $1').trim().split(/\s+/).filter(Boolean);
+            if (camelSplit.length >= 2) {
+              parts = camelSplit;
+            }
+          }
+          parts = parts.map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
           firstName = parts[0] || "Trader";
           lastName  = parts.slice(1).join(" ");
         }
@@ -577,6 +591,21 @@ export default function DayeTrading() {
     const check = () => setMobile(window.innerWidth < 768);
     check();
     window.addEventListener("resize", check);
+    // One-time fix: if a combined name was stored (e.g. "Shakurdaye"), split it
+    try {
+      const storedFirst = localStorage.getItem("daye_remembered_firstname") || "";
+      const storedLast  = localStorage.getItem("daye_remembered_lastname")  || "";
+      if (storedFirst && !storedLast && storedFirst.length > 3) {
+        const attempt = storedFirst.charAt(0).toUpperCase() + storedFirst.slice(1);
+        const parts   = attempt.replace(/([A-Z][a-z]+)/g," $1").trim().split(/\s+/).filter(Boolean);
+        if (parts.length >= 2) {
+          localStorage.setItem("daye_remembered_firstname", parts[0]);
+          localStorage.setItem("daye_remembered_lastname",  parts.slice(1).join(" "));
+        }
+      }
+      // Remove old single-name key if it exists
+      localStorage.removeItem("daye_remembered_name");
+    } catch(e) {}
     return () => window.removeEventListener("resize", check);
   }, []);
 
@@ -1691,18 +1720,19 @@ export default function DayeTrading() {
                 <div style={{display:"flex",flexDirection:"column",gap:3}}>
                   <label style={{fontSize:10,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.05em"}}>First Name</label>
                   <input
-                    defaultValue={firstName}
+                    value={editName.first}
                     onChange={e=>setEditName(p=>({...p,first:e.target.value}))}
-                    placeholder="First"
+                    placeholder="First Name"
+                    autoFocus
                     style={{...S.input,width:130,padding:"8px 12px",fontSize:14}}
                   />
                 </div>
                 <div style={{display:"flex",flexDirection:"column",gap:3}}>
                   <label style={{fontSize:10,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.05em"}}>Last Name</label>
                   <input
-                    defaultValue={lastName}
+                    value={editName.last}
                     onChange={e=>setEditName(p=>({...p,last:e.target.value}))}
-                    placeholder="Last"
+                    placeholder="Last Name"
                     style={{...S.input,width:130,padding:"8px 12px",fontSize:14}}
                   />
                 </div>
@@ -1724,7 +1754,18 @@ export default function DayeTrading() {
                 <button
                   style={{...S.btnSec,padding:"4px 10px",fontSize:11,marginLeft:4}}
                   onClick={()=>{
-                    setEditName({ first: firstName, last: lastName });
+                    let f = firstName;
+                    let l = lastName;
+                    // If lastName is empty and firstName looks like a combined name (e.g. "Shakurdaye"),
+                    // try to split on capital letters: "ShakurDaye" → ["Shakur","Daye"]
+                    if (!l && f && f.length > 2) {
+                      const splitOnCap = f.replace(/([A-Z])/g, ' $1').trim().split(/\s+/);
+                      if (splitOnCap.length >= 2) {
+                        f = splitOnCap[0];
+                        l = splitOnCap.slice(1).join(' ');
+                      }
+                    }
+                    setEditName({ first: f, last: l });
                     setEditingName(true);
                   }}
                 >
@@ -1810,8 +1851,17 @@ export default function DayeTrading() {
         authMode={authMode}
         setAuthMode={setAuthMode}
         onSuccess={(userData) => {
-          const fn = userData.firstName || userData.name.split(" ")[0] || "Trader";
-          const ln = userData.lastName  || userData.name.split(" ").slice(1).join(" ") || "";
+          let fn = (userData.firstName || userData.name || "Trader").trim();
+          let ln = (userData.lastName  || "").trim();
+          // If lastName is empty and firstName looks like a combined CamelCase name, split it
+          if (!ln && fn && fn.length > 3) {
+            const attempt = fn.charAt(0).toUpperCase() + fn.slice(1);
+            const parts   = attempt.replace(/([A-Z][a-z]+)/g," $1").trim().split(/\s+/).filter(Boolean);
+            if (parts.length >= 2) {
+              fn = parts[0];
+              ln = parts.slice(1).join(" ");
+            }
+          }
           setCurrentUser({ ...userData, firstName:fn, lastName:ln, name:`${fn}${ln?" "+ln:""}` });
           nav("dashboard");
         }}
