@@ -249,14 +249,19 @@ function ValidatedField({ label, id, type="text", placeholder, value, onChange, 
 // AUTH PAGE — top-level component so React never remounts inputs on re-render
 // ─────────────────────────────────────────────────────────────────────────────
 function AuthPage({ authMode, setAuthMode, onSuccess, onDemo, onBack }) {
-  const [fields, setFields] = useState({ firstName:"", lastName:"", email:"", password:"" });
-  const [touched, setTouched] = useState({ firstName:false, lastName:false, email:false, password:false });
-  const [submitAttempted, setSubmitAttempted] = useState(false);
+  // Load remembered email on first render
+  const rememberedEmail = (() => { try { return localStorage.getItem("daye_remembered_email") || ""; } catch(e) { return ""; } })();
+  const wasRemembered   = (() => { try { return localStorage.getItem("daye_remember_me") === "true"; } catch(e) { return false; } })();
 
-  // Reset when switching between login/signup
+  const [fields, setFields]               = useState({ firstName:"", lastName:"", email: wasRemembered ? rememberedEmail : "", password:"" });
+  const [touched, setTouched]             = useState({ firstName:false, lastName:false, email:false, password:false });
+  const [submitAttempted, setSubmitAttempted] = useState(false);
+  const [rememberMe, setRememberMe]       = useState(wasRemembered);
+  const [showPassword, setShowPassword]   = useState(false);
+
   const switchMode = (m) => {
     setAuthMode(m);
-    setFields({ firstName:"", lastName:"", email:"", password:"" });
+    setFields({ firstName:"", lastName:"", email: rememberMe ? rememberedEmail : "", password:"" });
     setTouched({ firstName:false, lastName:false, email:false, password:false });
     setSubmitAttempted(false);
   };
@@ -279,15 +284,24 @@ function AuthPage({ authMode, setAuthMode, onSuccess, onDemo, onBack }) {
     const hasErrors = errors.email || errors.password ||
       (authMode==="signup" && (errors.firstName || errors.lastName));
     if (!hasErrors) {
+      // Handle Remember Me
+      try {
+        if (rememberMe) {
+          localStorage.setItem("daye_remembered_email", fields.email.trim());
+          localStorage.setItem("daye_remember_me", "true");
+        } else {
+          localStorage.removeItem("daye_remembered_email");
+          localStorage.removeItem("daye_remember_me");
+        }
+      } catch(e) {}
+
       let displayName, displayEmail;
       if (authMode === "signup") {
-        // Use exactly what the user typed — First + Last
         const first = fields.firstName.trim();
         const last  = fields.lastName.trim();
         displayName  = last ? `${first} ${last}` : first;
         displayEmail = fields.email.trim();
       } else {
-        // Login: use the part before @ and capitalise it nicely as the name
         displayEmail = fields.email.trim();
         const raw = displayEmail.split("@")[0];
         displayName = raw
@@ -337,7 +351,7 @@ function AuthPage({ authMode, setAuthMode, onSuccess, onDemo, onBack }) {
             <div style={S.tab(authMode==="signup")} onClick={()=>switchMode("signup")}>Sign Up</div>
           </div>
 
-          {/* First Name + Last Name side by side (signup only) */}
+          {/* First + Last Name (signup only) */}
           {authMode==="signup" && (
             <div style={S.row}>
               <ValidatedField
@@ -372,19 +386,75 @@ function AuthPage({ authMode, setAuthMode, onSuccess, onDemo, onBack }) {
             autoComplete="email"
           />
 
-          {/* Password */}
-          <ValidatedField
-            id="password" label="Password" type="password"
-            placeholder="••••••••"
-            value={fields.password}
-            onChange={handleChange("password")}
-            error={errors.password}
-            touched={touched.password || submitAttempted}
-            autoComplete={authMode==="login"?"current-password":"new-password"}
-          />
+          {/* Password with show/hide toggle */}
+          <div style={{marginBottom:16}}>
+            <label htmlFor="password" style={{display:"block",marginBottom:6,fontSize:13,color:"rgba(255,255,255,0.5)"}}>Password</label>
+            <div style={{position:"relative"}}>
+              <input
+                id="password"
+                name="password"
+                type={showPassword ? "text" : "password"}
+                placeholder="••••••••"
+                value={fields.password}
+                onChange={handleChange("password")}
+                autoComplete={authMode==="login"?"current-password":"new-password"}
+                spellCheck="false"
+                style={{
+                  display:"block", width:"100%", boxSizing:"border-box",
+                  background:"rgba(255,255,255,0.06)",
+                  border:`1.5px solid ${touched.password&&errors.password?"#ef4444":touched.password&&!errors.password&&fields.password?"#22c55e":"rgba(255,255,255,0.12)"}`,
+                  borderRadius:10, padding:"12px 44px 12px 14px",
+                  color:"#fff", fontSize:15, outline:"none",
+                  WebkitAppearance:"none", MozAppearance:"none",
+                }}
+              />
+              <button
+                type="button"
+                onClick={()=>setShowPassword(p=>!p)}
+                style={{position:"absolute",right:12,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",color:"rgba(255,255,255,0.4)",fontSize:16,padding:4,lineHeight:1}}
+              >
+                {showPassword ? "🙈" : "👁️"}
+              </button>
+            </div>
+            {touched.password && errors.password && (
+              <div style={{marginTop:5,fontSize:12,color:"#f87171",display:"flex",alignItems:"center",gap:5}}>
+                <span>⚠</span> {errors.password}
+              </div>
+            )}
+            {touched.password && !errors.password && fields.password && (
+              <div style={{marginTop:5,fontSize:12,color:"#4ade80",display:"flex",alignItems:"center",gap:5}}>
+                <span>✓</span> Looks good!
+              </div>
+            )}
+          </div>
+
+          {/* Remember Me + Forgot Password row (login only) */}
+          {authMode==="login" && (
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:8}}>
+              <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",userSelect:"none"}}>
+                {/* Custom checkbox */}
+                <div
+                  onClick={()=>setRememberMe(p=>!p)}
+                  style={{
+                    width:18, height:18, borderRadius:5, border:`2px solid ${rememberMe?"#7c3aed":"rgba(255,255,255,0.25)"}`,
+                    background: rememberMe?"#7c3aed":"transparent",
+                    display:"flex", alignItems:"center", justifyContent:"center",
+                    cursor:"pointer", transition:"all 0.2s", flexShrink:0,
+                  }}
+                >
+                  {rememberMe && <span style={{color:"#fff",fontSize:11,fontWeight:800,lineHeight:1}}>✓</span>}
+                </div>
+                <span style={{fontSize:13,color:"rgba(255,255,255,0.55)"}}>Remember me</span>
+              </label>
+              <span style={{fontSize:13,color:"#a78bfa",cursor:"pointer",textDecoration:"underline"}}
+                onClick={()=>alert("Password reset coming soon! For now, use demo mode to explore the app.")}>
+                Forgot password?
+              </span>
+            </div>
+          )}
 
           {/* Submit */}
-          <div style={{marginTop:8}}>
+          <div style={{marginTop:4}}>
             <button style={S.btn} onClick={handleSubmit}>
               {authMode==="login" ? "Log In →" : "Create Account →"}
             </button>
