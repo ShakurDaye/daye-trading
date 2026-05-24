@@ -993,7 +993,8 @@ export default function DayeTrading() {
     }, [tf, playing, tradeAsset.symbol]);
 
     // Chart geometry
-    const visCount = Math.floor(40 / zoom);
+    // zoom=1 (100%) → 40 candles; zoom=0.25 (25%) → 80 candles; zoom=2 (200%) → 20 candles
+    const visCount = Math.min(candles.length, Math.round(40 / zoom));
     const start    = Math.max(0, Math.min(candles.length - visCount, pan));
     const visible  = candles.slice(start, start + visCount);
     const W = 820, H = 360, padL = 66, padR = 10, padT = 18, padB = 32;
@@ -1144,15 +1145,16 @@ export default function DayeTrading() {
             </div>
 
             {/* Zoom + pan bar */}
-            <div style={{display:"flex",alignItems:"center",gap:7,padding:"5px 12px",borderBottom:"1px solid rgba(255,255,255,0.04)",background:"rgba(0,0,0,0.12)"}}>
+            <div style={{display:"flex",alignItems:"center",gap:7,padding:"5px 12px",borderBottom:"1px solid rgba(255,255,255,0.04)",background:"rgba(0,0,0,0.12)",flexWrap:"wrap"}}>
               <span style={{...S.muted,fontSize:10,textTransform:"uppercase",letterSpacing:"0.04em"}}>Zoom:</span>
-              <button onClick={()=>setZoom(z=>Math.min(4,+(z+0.25).toFixed(2)))} style={{width:24,height:24,borderRadius:5,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.06)",color:"#fff",cursor:"pointer",fontSize:15,display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>+</button>
+              <button onClick={()=>setZoom(z=>Math.min(2,+(z+0.25).toFixed(2)))} style={{width:24,height:24,borderRadius:5,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.06)",color:"#fff",cursor:"pointer",fontSize:15,display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>+</button>
               <span style={{fontSize:11,color:"rgba(255,255,255,0.4)",minWidth:34,textAlign:"center"}}>{Math.round(zoom*100)}%</span>
-              <button onClick={()=>setZoom(z=>Math.max(0.5,+(z-0.25).toFixed(2)))} style={{width:24,height:24,borderRadius:5,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.06)",color:"#fff",cursor:"pointer",fontSize:15,display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>−</button>
-              <span style={{...S.muted,fontSize:10,marginLeft:10,textTransform:"uppercase",letterSpacing:"0.04em"}}>Pan:</span>
+              <button onClick={()=>setZoom(z=>Math.max(0.25,+(z-0.25).toFixed(2)))} style={{width:24,height:24,borderRadius:5,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.06)",color:"#fff",cursor:"pointer",fontSize:15,display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>−</button>
+              <button onClick={()=>{setZoom(1);setPan(0);}} style={{padding:"2px 10px",height:24,borderRadius:5,border:"1px solid rgba(124,58,237,0.3)",background:"rgba(124,58,237,0.1)",color:"#c4b5fd",cursor:"pointer",fontSize:10,fontWeight:600,whiteSpace:"nowrap"}}>↺ Reset</button>
+              <span style={{...S.muted,fontSize:10,marginLeft:6,textTransform:"uppercase",letterSpacing:"0.04em"}}>Pan:</span>
               <button onClick={()=>setPan(p=>Math.max(0,p-5))} style={{width:24,height:24,borderRadius:5,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.06)",color:"#fff",cursor:"pointer",fontSize:12,display:"flex",alignItems:"center",justifyContent:"center"}}>◀</button>
               <button onClick={()=>setPan(p=>Math.min(candles.length-visCount,p+5))} style={{width:24,height:24,borderRadius:5,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.06)",color:"#fff",cursor:"pointer",fontSize:12,display:"flex",alignItems:"center",justifyContent:"center"}}>▶</button>
-              <span style={{...S.muted,fontSize:10,marginLeft:8}}>{visible.length} candles · {tf} each</span>
+              <span style={{...S.muted,fontSize:10,marginLeft:4}}>{visible.length} candles · {tf}</span>
               {!playing && (
                 <span style={{marginLeft:"auto",fontSize:11,color:"#ef4444",background:"rgba(239,68,68,0.08)",border:"1px solid rgba(239,68,68,0.2)",borderRadius:6,padding:"2px 10px",fontWeight:600}}>⏸ PAUSED</span>
               )}
