@@ -132,44 +132,88 @@ function Sparkline({ positive, width=80, height=32 }) {
   );
 }
 
-// ─── CANDLE CHART ────────────────────────────────────────────────────────────
+// ─── LIVE CANDLE CHART ───────────────────────────────────────────────────────
 function CandleChart({ symbol }) {
-  const candles = [];
-  let price = ASSETS.find(a=>a.symbol===symbol)?.price || 200;
-  for (let i=0; i<30; i++) {
-    const open = price;
-    const move = (Math.random()-0.5)*price*0.04;
-    const close = open+move;
-    const high  = Math.max(open,close)+Math.random()*price*0.015;
-    const low   = Math.min(open,close)-Math.random()*price*0.015;
-    candles.push({ open, close, high, low });
-    price = close;
-  }
-  const allP = candles.flatMap(c=>[c.high,c.low]);
-  const minP=Math.min(...allP), maxP=Math.max(...allP), range=maxP-minP||1;
-  const W=520, H=180, pad=10;
-  const toY = p => pad+((maxP-p)/range)*(H-2*pad);
-  const cw=12, gap=5;
+  const basePrice = ASSETS.find(a=>a.symbol===symbol)?.price || 200;
+
+  // Generate initial candles
+  const makeCandles = (base) => {
+    const candles = [];
+    let price = base * 0.97;
+    for (let i=0; i<40; i++) {
+      const open  = price;
+      const move  = (Math.random()-0.48)*price*0.025;
+      const close = Math.max(open*0.97, open+move);
+      const high  = Math.max(open,close)*(1+Math.random()*0.01);
+      const low   = Math.min(open,close)*(1-Math.random()*0.01);
+      candles.push({ open, close, high, low });
+      price = close;
+    }
+    return candles;
+  };
+
+  const [candles, setCandles] = useState(() => makeCandles(basePrice));
+  const [lastPrice, setLastPrice] = useState(basePrice);
+
+  // Tick every 1.5s — add a new candle, drop the oldest
+  useEffect(() => {
+    const id = setInterval(() => {
+      setCandles(prev => {
+        const last  = prev[prev.length-1];
+        const open  = last.close;
+        const move  = (Math.random()-0.48)*open*0.018;
+        const close = Math.max(open*0.98, open+move);
+        const high  = Math.max(open,close)*(1+Math.random()*0.008);
+        const low   = Math.min(open,close)*(1-Math.random()*0.008);
+        setLastPrice(close);
+        return [...prev.slice(1), { open, close, high, low }];
+      });
+    }, 1500);
+    return () => clearInterval(id);
+  }, [symbol]);
+
+  const allP   = candles.flatMap(c=>[c.high,c.low]);
+  const minP   = Math.min(...allP);
+  const maxP   = Math.max(...allP);
+  const range  = maxP - minP || 1;
+  const W=560, H=200, pad=12;
+  const toY    = p => pad + ((maxP-p)/range)*(H-2*pad);
+  const cw=9, gap=5;
+
   return (
-    <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{overflow:"visible",display:"block"}}>
-      {[0,0.25,0.5,0.75,1].map(t=>(
-        <line key={t} x1={0} y1={pad+(1-t)*(H-2*pad)} x2={W} y2={pad+(1-t)*(H-2*pad)} stroke="rgba(255,255,255,0.05)" strokeWidth="1"/>
-      ))}
-      {candles.map((c,i)=>{
-        const x=i*(cw+gap)+gap;
-        const bull=c.close>=c.open;
-        const color=bull?"#22c55e":"#ef4444";
-        const bodyTop=toY(Math.max(c.open,c.close));
-        const bodyBot=toY(Math.min(c.open,c.close));
-        const bodyH=Math.max(1,bodyBot-bodyTop);
-        return (
-          <g key={i}>
-            <line x1={x+cw/2} y1={toY(c.high)} x2={x+cw/2} y2={toY(c.low)} stroke={color} strokeWidth="1.5"/>
-            <rect x={x} y={bodyTop} width={cw} height={bodyH} fill={color} rx="1"/>
+    <div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+        <div style={{fontSize:11,color:"rgba(255,255,255,0.35)",letterSpacing:"0.05em"}}>LIVE SIMULATED · UPDATES EVERY 1.5s</div>
+        <div style={{fontWeight:800,fontSize:18,color: candles[candles.length-1].close >= candles[candles.length-2]?.close ? "#22c55e":"#ef4444"}}>
+          ${lastPrice.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}
+        </div>
+      </div>
+      <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{overflow:"visible",display:"block"}}>
+        {/* Grid */}
+        {[0,0.25,0.5,0.75,1].map(t=>(
+          <g key={t}>
+            <line x1={0} y1={pad+(1-t)*(H-2*pad)} x2={W} y2={pad+(1-t)*(H-2*pad)} stroke="rgba(255,255,255,0.04)" strokeWidth="1"/>
+            <text x={W-2} y={pad+(1-t)*(H-2*pad)-2} fill="rgba(255,255,255,0.2)" fontSize="8" textAnchor="end">
+              ${(minP+t*range).toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:0})}
+            </text>
           </g>
-        );
-      })}
-    </svg>
+        ))}
+        {candles.map((c,i)=>{
+          const x    = i*(cw+gap)+gap;
+          const bull = c.close >= c.open;
+          const color= bull ? "#22c55e" : "#ef4444";
+          const top  = toY(Math.max(c.open,c.close));
+          const bot  = toY(Math.min(c.open,c.close));
+          const h    = Math.max(1, bot-top);
+          return (
+            <g key={i}>
+              <line x1={x+cw/2} y1={toY(c.high)} x2={x+cw/2} y2={toY(c.low)} stroke={color} strokeWidth="1"/>
+              <rect x={x} y={top} width={cw} height={h} fill={color} rx="1" opacity={i===candles.length-1?1:0.85}/>
+            </g>
+          );
+        })}
+      </svg>
+    </div>
   );
 }
 
@@ -249,12 +293,13 @@ function ValidatedField({ label, id, type="text", placeholder, value, onChange, 
 // AUTH PAGE — top-level component so React never remounts inputs on re-render
 // ─────────────────────────────────────────────────────────────────────────────
 function AuthPage({ authMode, setAuthMode, onSuccess, onDemo, onBack }) {
-  // Load remembered email on first render
-  const rememberedEmail = (() => { try { return localStorage.getItem("daye_remembered_email") || ""; } catch(e) { return ""; } })();
-  const wasRemembered   = (() => { try { return localStorage.getItem("daye_remember_me") === "true"; } catch(e) { return false; } })();
+  // Load remembered credentials on first render
+  const rememberedEmail    = (() => { try { return localStorage.getItem("daye_remembered_email")    || ""; } catch(e) { return ""; } })();
+  const rememberedPassword = (() => { try { return localStorage.getItem("daye_remembered_password") || ""; } catch(e) { return ""; } })();
+  const wasRemembered      = (() => { try { return localStorage.getItem("daye_remember_me") === "true"; } catch(e) { return false; } })();
 
-  const [fields, setFields]               = useState({ firstName:"", lastName:"", email: wasRemembered ? rememberedEmail : "", password:"" });
-  const [touched, setTouched]             = useState({ firstName:false, lastName:false, email:false, password:false });
+  const [fields, setFields]               = useState({ firstName:"", lastName:"", email: wasRemembered ? rememberedEmail : "", password: wasRemembered ? rememberedPassword : "" });
+  const [touched, setTouched]             = useState({ firstName:false, lastName:false, email: wasRemembered, password: wasRemembered });
   const [submitAttempted, setSubmitAttempted] = useState(false);
   const [rememberMe, setRememberMe]       = useState(wasRemembered);
   const [showPassword, setShowPassword]   = useState(false);
@@ -284,32 +329,45 @@ function AuthPage({ authMode, setAuthMode, onSuccess, onDemo, onBack }) {
     const hasErrors = errors.email || errors.password ||
       (authMode==="signup" && (errors.firstName || errors.lastName));
     if (!hasErrors) {
-      // Handle Remember Me
-      try {
-        if (rememberMe) {
-          localStorage.setItem("daye_remembered_email", fields.email.trim());
-          localStorage.setItem("daye_remember_me", "true");
-        } else {
-          localStorage.removeItem("daye_remembered_email");
-          localStorage.removeItem("daye_remember_me");
-        }
-      } catch(e) {}
-
       let displayName, displayEmail;
       if (authMode === "signup") {
         const first = fields.firstName.trim();
         const last  = fields.lastName.trim();
         displayName  = last ? `${first} ${last}` : first;
         displayEmail = fields.email.trim();
+        onSuccess({ name: displayName, firstName: first, lastName: last, email: displayEmail });
+        return; // signup handled, exit early
       } else {
         displayEmail = fields.email.trim();
-        const raw = displayEmail.split("@")[0];
-        displayName = raw
-          .replace(/[._\-0-9]/g, " ")
-          .trim()
-          .replace(/\s+/g, " ")
-          .replace(/\b\w/g, c => c.toUpperCase()) || "Trader";
+        // Try to restore the saved name from a previous signup/login
+        const savedName = (() => { try { return localStorage.getItem("daye_remembered_name") || ""; } catch(e) { return ""; } })();
+        if (savedName) {
+          displayName = savedName;
+        } else {
+          const raw = displayEmail.split("@")[0];
+          displayName = raw
+            .replace(/[._\-0-9]/g, " ")
+            .trim()
+            .replace(/\s+/g, " ")
+            .replace(/\b\w/g, c => c.toUpperCase()) || "Trader";
+        }
       }
+
+      // Handle Remember Me — save email, password, and name
+      try {
+        if (rememberMe) {
+          localStorage.setItem("daye_remembered_email",    fields.email.trim());
+          localStorage.setItem("daye_remembered_password", fields.password);
+          localStorage.setItem("daye_remembered_name",     displayName);
+          localStorage.setItem("daye_remember_me",         "true");
+        } else {
+          localStorage.removeItem("daye_remembered_email");
+          localStorage.removeItem("daye_remembered_password");
+          localStorage.removeItem("daye_remembered_name");
+          localStorage.removeItem("daye_remember_me");
+        }
+      } catch(e) {}
+
       onSuccess({ name: displayName, email: displayEmail });
     }
   };
@@ -495,6 +553,7 @@ export default function DayeTrading() {
   const [editingName, setEditingName]       = useState(false);
   const [editName, setEditName]             = useState({ first:"", last:"" });
   const [tradeHistory, setTradeHistory]     = useState([]);
+  const [tradeAsset, setTradeAsset]         = useState(ASSETS[0]);
   const [tradeQty, setTradeQty]             = useState("1");
   const [tradeType, setTradeType]           = useState("Market");
   const [tradeSide, setTradeSide]           = useState("BUY");
@@ -1175,9 +1234,10 @@ export default function DayeTrading() {
 
   // ── PROFILE ─────────────────────────────────────────────────────────────────
   const PageProfile = () => {
-    const nameParts = currentUser.name.trim().split(" ");
-    const firstName = nameParts[0] || "";
-    const lastName  = nameParts.slice(1).join(" ") || "";
+    // Support both split storage (firstName/lastName) and legacy single name
+    const firstName = currentUser.firstName || currentUser.name.split(" ")[0] || "";
+    const lastName  = currentUser.lastName  || currentUser.name.split(" ").slice(1).join(" ") || "";
+    const nameParts = [firstName, lastName].filter(Boolean);
     const initials  = nameParts.map(p=>p[0]).join("").toUpperCase().slice(0,2);
     const doneCount = lessons.beginner.filter(l=>l.done).length + lessons.intermediate.filter(l=>l.done).length + lessons.advanced.filter(l=>l.done).length;
 
@@ -1190,8 +1250,18 @@ export default function DayeTrading() {
     };
 
     const saveEditName = () => {
-      const newName = `${editName.first.trim()} ${editName.last.trim()}`.trim();
-      if (newName) setCurrentUser(prev => ({...prev, name: newName}));
+      const f = editName.first.trim();
+      const l = editName.last.trim();
+      if (f) {
+        setCurrentUser(prev => ({
+          ...prev,
+          firstName: f,
+          lastName:  l,
+          name: l ? `${f} ${l}` : f,
+        }));
+        // Update remembered name too
+        try { if (localStorage.getItem("daye_remember_me")==="true") localStorage.setItem("daye_remembered_name", l ? `${f} ${l}` : f); } catch(e){}
+      }
       setEditingName(false);
     };
 
