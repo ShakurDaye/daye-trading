@@ -419,16 +419,17 @@ export default function DayeTrading() {
   const [selectedQuiz, setSelectedQuiz]     = useState(null);
   const [quizState, setQuizState]           = useState({ started:false, current:0, answers:[], done:false });
   const [lessons, setLessons]               = useState(JSON.parse(JSON.stringify(LESSONS_INITIAL)));
+  const [quizScores, setQuizScores]         = useState([]); // { title, score, total, pct }
   const [quizLeaveWarning, setQuizLeaveWarning] = useState(false);
   const [profilePic, setProfilePic]         = useState(null);
   const [editingName, setEditingName]       = useState(false);
   const [editName, setEditName]             = useState({ first:"", last:"" });
-  const [tradeHistory, setTradeHistory]     = useState(TRADE_HISTORY);
+  const [tradeHistory, setTradeHistory]     = useState([]);
   const [tradeQty, setTradeQty]             = useState("1");
   const [tradeType, setTradeType]           = useState("Market");
   const [tradeSide, setTradeSide]           = useState("BUY");
   const [tradeMsg, setTradeMsg]             = useState("");
-  const [journal, setJournal]               = useState(JOURNAL_ENTRIES);
+  const [journal, setJournal]               = useState([]);
   const [showJournalForm, setShowJournalForm] = useState(false);
   const [newEntry, setNewEntry]             = useState({ asset:"AAPL", side:"BUY", entry:"", exit:"", notes:"", emotion:"Neutral", lesson:"" });
   const [mobile, setMobile]                 = useState(false);
@@ -475,6 +476,10 @@ export default function DayeTrading() {
   const answerQuiz = (idx) => {
     const ans = [...quizState.answers, idx];
     if (quizState.current + 1 >= selectedQuiz.questions.length) {
+      const score = ans.filter((a,i) => a===selectedQuiz.questions[i].ans).length;
+      const total = selectedQuiz.questions.length;
+      const pct   = Math.round((score/total)*100);
+      setQuizScores(prev => [...prev.filter(q=>q.title!==selectedQuiz.title), { title:selectedQuiz.title, score, total, pct }]);
       setQuizState({ ...quizState, answers:ans, done:true });
     } else {
       setQuizState({ ...quizState, current:quizState.current+1, answers:ans });
@@ -588,22 +593,29 @@ export default function DayeTrading() {
         <h1 style={{...S.h1,marginBottom:8,fontSize:"clamp(22px,4vw,36px)"}}>
           Welcome, <span style={{color:"#a78bfa"}}>{currentUser.name}</span> 👋
         </h1>
-        <p style={S.muted}>You're on a 4-day learning streak · Keep it up!</p>
+        <p style={S.muted}>Keep learning and building your trading skills!</p>
       </div>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:14,marginBottom:22}}>
-        {[
-          {label:"Sim. Portfolio",value:"$12,480.32",sub:"+$240.50 today",pos:true},
-          {label:"Lessons Done",  value:"3 / 21",     sub:"14% complete"},
-          {label:"Quiz Score",    value:"85%",         sub:"Last: Fundamentals"},
-          {label:"Streak",        value:"4 days 🔥",  sub:"Best: 7 days"},
-        ].map(s=>(
-          <div key={s.label} style={S.card}>
-            <div style={{...S.muted,fontSize:11,marginBottom:6,textTransform:"uppercase",letterSpacing:"0.05em"}}>{s.label}</div>
-            <div style={{fontWeight:800,fontSize:20,marginBottom:4}}>{s.value}</div>
-            <div style={{fontSize:12,color:s.pos?"#22c55e":"rgba(255,255,255,0.35)"}}>{s.sub}</div>
+      {(() => {
+        const totalDone = lessons.beginner.filter(l=>l.done).length + lessons.intermediate.filter(l=>l.done).length + lessons.advanced.filter(l=>l.done).length;
+        const totalLessons = 21;
+        const avgQuiz = quizScores.length ? Math.round(quizScores.reduce((s,q)=>s+q.pct,0)/quizScores.length) : 0;
+        return (
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:14,marginBottom:22}}>
+            {[
+              {label:"Sim. Portfolio", value:"$12,480.32",  sub:"+$240.50 today", pos:true},
+              {label:"Lessons Done",   value:`${totalDone} / ${totalLessons}`, sub:`${Math.round((totalDone/totalLessons)*100)}% complete`},
+              {label:"Quiz Score",     value: quizScores.length ? `${avgQuiz}%` : "—", sub: quizScores.length ? `Last: ${quizScores[quizScores.length-1].title}` : "No quizzes taken yet"},
+              {label:"Streak",         value:"4 days 🔥",   sub:"Best: 7 days"},
+            ].map(s=>(
+              <div key={s.label} style={S.card}>
+                <div style={{...S.muted,fontSize:11,marginBottom:6,textTransform:"uppercase",letterSpacing:"0.05em"}}>{s.label}</div>
+                <div style={{fontWeight:800,fontSize:20,marginBottom:4}}>{s.value}</div>
+                <div style={{fontSize:12,color:s.pos?"#22c55e":"rgba(255,255,255,0.35)"}}>{s.sub}</div>
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
+        );
+      })()}
       <div style={{display:"grid",gridTemplateColumns:mobile?"1fr":"1fr 1fr",gap:18,marginBottom:18}}>
         <div style={S.card}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18}}>
@@ -813,7 +825,9 @@ export default function DayeTrading() {
           <div style={{overflowX:"auto"}}>
             <table style={{...S.table,minWidth:380}}>
               <thead><tr><th style={S.th}>Symbol</th><th style={S.th}>Qty</th><th style={S.th}>Avg</th><th style={S.th}>Current</th><th style={S.th}>P&L</th></tr></thead>
-              <tbody>{OPEN_POSITIONS.map(p=>(
+              <tbody>{OPEN_POSITIONS.length === 0 ? (
+                <tr><td colSpan={5} style={{...S.td,textAlign:"center",color:"rgba(255,255,255,0.3)",padding:24}}>No open positions yet. Place your first simulated trade!</td></tr>
+              ) : OPEN_POSITIONS.map(p=>(
                 <tr key={p.symbol}>
                   <td style={{...S.td,fontWeight:700}}>{p.symbol}</td>
                   <td style={S.td}>{p.qty}</td>
@@ -830,7 +844,9 @@ export default function DayeTrading() {
           <div style={{overflowX:"auto"}}>
             <table style={{...S.table,minWidth:360}}>
               <thead><tr><th style={S.th}>Time</th><th style={S.th}>Symbol</th><th style={S.th}>Type</th><th style={S.th}>Price</th><th style={S.th}>Total</th></tr></thead>
-              <tbody>{tradeHistory.map(t=>(
+              <tbody>{tradeHistory.length === 0 ? (
+                <tr><td colSpan={5} style={{...S.td,textAlign:"center",color:"rgba(255,255,255,0.3)",padding:24}}>No trades yet. Use the order panel to place your first trade!</td></tr>
+              ) : tradeHistory.map(t=>(
                 <tr key={t.id}>
                   <td style={{...S.td,color:"rgba(255,255,255,0.4)",fontSize:12}}>{t.time}</td>
                   <td style={{...S.td,fontWeight:700}}>{t.symbol}</td>
@@ -1136,9 +1152,9 @@ export default function DayeTrading() {
               </div>
             ) : (
               <div style={{display:"flex",alignItems:"baseline",gap:10,marginBottom:4,flexWrap:"wrap"}}>
-                <span style={{fontSize:"clamp(22px,4vw,32px)",fontWeight:800,letterSpacing:"-0.03em",color:"#fff",lineHeight:1.1}}>{firstName}</span>
+                <span style={{fontSize:"clamp(22px,4vw,32px)",fontWeight:800,letterSpacing:"-0.03em",color:"#fff",lineHeight:1.1}}>{firstName}{" "}</span>
                 {lastName && <span style={{fontSize:"clamp(22px,4vw,32px)",fontWeight:800,letterSpacing:"-0.03em",color:"#a78bfa",lineHeight:1.1}}>{lastName}</span>}
-                <button style={{...S.btnSec,padding:"4px 10px",fontSize:11,marginLeft:4}} onClick={()=>{setEditName({first:firstName,last:lastName});setEditingName(true);}}>✏️ Edit</button>
+                <button style={{...S.btnSec,padding:"4px 10px",fontSize:11}} onClick={()=>{setEditName({first:firstName,last:lastName});setEditingName(true);}}>✏️ Edit</button>
               </div>
             )}
             <div style={{fontSize:13,color:"rgba(255,255,255,0.4)",marginBottom:12}}>
@@ -1154,7 +1170,12 @@ export default function DayeTrading() {
         </div>
       </div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:14,marginBottom:22}}>
-        {[{label:"Lessons Done",value:String(doneCount),icon:"📚"},{label:"Quiz Average",value:"85%",icon:"🧠"},{label:"Sim. Trades",value:String(tradeHistory.length),icon:"📈"},{label:"Total P&L",value:"+$116",icon:"💰"}].map(s=>(
+        {[
+          {label:"Lessons Done", value:String(doneCount), icon:"📚"},
+          {label:"Quiz Average",  value:quizScores.length ? `${Math.round(quizScores.reduce((s,q)=>s+q.pct,0)/quizScores.length)}%` : "0%", icon:"🧠"},
+          {label:"Sim. Trades",   value:String(tradeHistory.length), icon:"📈"},
+          {label:"Total P&L",     value:"+$116", icon:"💰"},
+        ].map(s=>(
           <div key={s.label} style={{...S.card,textAlign:"center"}}>
             <div style={{fontSize:26,marginBottom:7}}>{s.icon}</div>
             <div style={{fontWeight:800,fontSize:20,marginBottom:3}}>{s.value}</div>
