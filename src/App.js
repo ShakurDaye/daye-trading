@@ -34,11 +34,11 @@ const OPEN_POSITIONS = [
   { symbol:"NVDA", qty:2,   avgCost:905.00, current:912.36, pl:+14.72, pct:+0.81 },
   { symbol:"BTC",  qty:0.1, avgCost:67800,  current:68420,  pl:+62.0,  pct:+0.91 },
 ];
-const LESSONS = {
+const LESSONS_INITIAL = {
   beginner: [
-    { id:1,  title:"What Is Trading?",             time:"10 min", done:true  },
-    { id:2,  title:"Stocks, Crypto, Forex & ETFs", time:"15 min", done:true  },
-    { id:3,  title:"What Is a Chart?",             time:"12 min", done:true  },
+    { id:1,  title:"What Is Trading?",             time:"10 min", done:false },
+    { id:2,  title:"Stocks, Crypto, Forex & ETFs", time:"15 min", done:false },
+    { id:3,  title:"What Is a Chart?",             time:"12 min", done:false },
     { id:4,  title:"Candlestick Basics",           time:"20 min", done:false },
     { id:5,  title:"Risk Management Basics",       time:"18 min", done:false },
     { id:6,  title:"Stop-Loss & Take-Profit",      time:"15 min", done:false },
@@ -63,6 +63,7 @@ const LESSONS = {
     { id:21, title:"Trading Journal Review",       time:"20 min", done:false },
   ],
 };
+const LESSONS = LESSONS_INITIAL;
 const QUIZZES = [
   { level:"beginner", title:"Trading Fundamentals", questions:[
     { q:"What does a stop-loss order do?", opts:["Locks in profits automatically","Limits your maximum loss on a trade","Increases your buying power","Places a market order instantly"], ans:1 },
@@ -301,7 +302,7 @@ function AuthPage({ authMode, setAuthMode, onSuccess, onDemo, onBack }) {
 
   const S = {
     page:   { minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", padding:"24px 16px", position:"relative", background:"#080810" },
-    glow:   { position:"fixed", top:"30%", left:"50%", transform:"translateX(-50%)", width:"min(500px,90vw)", height:"min(500px,90vw)", background:"radial-gradient(circle, rgba(124,58,237,0.12) 0%, transparent 70%)", pointerEvents:"none", zIndex:0 },
+    glow:   { position:"absolute", top:"20%", left:"50%", transform:"translateX(-50%)", width:"min(500px,90vw)", height:"min(500px,90vw)", background:"radial-gradient(circle, rgba(124,58,237,0.12) 0%, transparent 70%)", pointerEvents:"none", zIndex:0 },
     wrap:   { width:"100%", maxWidth:440, position:"relative", zIndex:1 },
     card:   { background:"rgba(255,255,255,0.03)", border:"1px solid rgba(124,58,237,0.2)", borderRadius:16, padding:"clamp(20px,5vw,32px)", backdropFilter:"blur(8px)", WebkitBackdropFilter:"blur(8px)" },
     toggle: { display:"flex", background:"rgba(255,255,255,0.05)", borderRadius:10, marginBottom:24, padding:4 },
@@ -417,7 +418,12 @@ export default function DayeTrading() {
   const [selectedLesson, setSelectedLesson] = useState(null);
   const [selectedQuiz, setSelectedQuiz]     = useState(null);
   const [quizState, setQuizState]           = useState({ started:false, current:0, answers:[], done:false });
-  const [tradeAsset, setTradeAsset]         = useState(ASSETS[0]);
+  const [lessons, setLessons]               = useState(JSON.parse(JSON.stringify(LESSONS_INITIAL)));
+  const [quizLeaveWarning, setQuizLeaveWarning] = useState(false);
+  const [profilePic, setProfilePic]         = useState(null);
+  const [editingName, setEditingName]       = useState(false);
+  const [editName, setEditName]             = useState({ first:"", last:"" });
+  const [tradeHistory, setTradeHistory]     = useState(TRADE_HISTORY);
   const [tradeQty, setTradeQty]             = useState("1");
   const [tradeType, setTradeType]           = useState("Market");
   const [tradeSide, setTradeSide]           = useState("BUY");
@@ -436,7 +442,31 @@ export default function DayeTrading() {
 
   const nav = useCallback((p) => { setPage(p); window.scrollTo(0,0); }, []);
 
+  const markLessonDone = (lessonId) => {
+    setLessons(prev => {
+      const updated = JSON.parse(JSON.stringify(prev));
+      for (const level of ["beginner","intermediate","advanced"]) {
+        const idx = updated[level].findIndex(l=>l.id===lessonId);
+        if (idx !== -1) { updated[level][idx].done = true; break; }
+      }
+      return updated;
+    });
+    nav("lessons");
+  };
+
   const handleTrade = () => {
+    const qty = parseFloat(tradeQty||0);
+    const total = qty * tradeAsset.price;
+    const newTrade = {
+      id: tradeHistory.length+1,
+      time: new Date().toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}),
+      symbol: tradeAsset.symbol,
+      type: tradeSide,
+      qty,
+      price: tradeAsset.price,
+      total,
+    };
+    setTradeHistory(prev => [newTrade, ...prev]);
     setTradeMsg(`✅ ${tradeSide} ${tradeQty} ${tradeAsset.symbol} @ $${tradeAsset.price.toLocaleString()} — Simulated`);
     setTimeout(() => setTradeMsg(""), 3000);
   };
@@ -580,7 +610,7 @@ export default function DayeTrading() {
             <h3 style={S.h3}>Learning Progress</h3>
             <button style={{...S.btnSec,padding:"6px 12px",fontSize:12}} onClick={()=>nav("lessons")}>View All</button>
           </div>
-          {[{l:"Beginner",v:3,m:7},{l:"Intermediate",v:0,m:7},{l:"Advanced",v:0,m:7}].map(p=>(
+          {[{l:"Beginner",v:lessons.beginner.filter(x=>x.done).length,m:7},{l:"Intermediate",v:lessons.intermediate.filter(x=>x.done).length,m:7},{l:"Advanced",v:lessons.advanced.filter(x=>x.done).length,m:7}].map(p=>(
             <div key={p.l} style={{marginBottom:14}}>
               <div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}>
                 <span style={{fontSize:13,fontWeight:600}}>{p.l} Track</span>
@@ -591,9 +621,15 @@ export default function DayeTrading() {
           ))}
           <div style={{marginTop:18,...S.cardPurple}}>
             <div style={{fontSize:11,color:"#a78bfa",fontWeight:600,marginBottom:4}}>▶ CONTINUE WHERE YOU LEFT OFF</div>
-            <div style={{fontWeight:700,marginBottom:4}}>Candlestick Basics</div>
-            <div style={{...S.muted,fontSize:12,marginBottom:12}}>Lesson 4 · 20 min · Beginner</div>
-            <button style={{...S.btnPrimary,padding:"8px 18px",fontSize:13}} onClick={()=>{setSelectedLesson(LESSONS.beginner[3]);nav("lesson-detail");}}>Continue →</button>
+            {(() => {
+              const next = lessons.beginner.find(l=>!l.done) || lessons.intermediate.find(l=>!l.done) || lessons.advanced.find(l=>!l.done);
+              if (!next) return <div style={{color:"#22c55e",fontWeight:700}}>🎉 All lessons complete!</div>;
+              return (<>
+                <div style={{fontWeight:700,marginBottom:4}}>{next.title}</div>
+                <div style={{...S.muted,fontSize:12,marginBottom:12}}>⏱ {next.time}</div>
+                <button style={{...S.btnPrimary,padding:"8px 18px",fontSize:13}} onClick={()=>{setSelectedLesson(next);nav("lesson-detail");}}>Start →</button>
+              </>);
+            })()}
           </div>
         </div>
         <div style={S.card}>
@@ -635,20 +671,22 @@ export default function DayeTrading() {
           <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
             <h2 style={{fontSize:17,fontWeight:700,margin:0}}>{level.label}</h2>
             <div style={{flex:1,height:1,background:"rgba(255,255,255,0.07)"}}/>
-            <span style={{...S.muted,fontSize:12}}>{LESSONS[level.key].filter(l=>l.done).length}/{LESSONS[level.key].length} complete</span>
+            <span style={{...S.muted,fontSize:12}}>{lessons[level.key].filter(l=>l.done).length}/{lessons[level.key].length} complete</span>
           </div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(240px,1fr))",gap:12}}>
-            {LESSONS[level.key].map((lesson,idx)=>{
-              const locked=level.key!=="beginner"&&idx>0&&!LESSONS[level.key][idx-1].done;
+            {lessons[level.key].map((lesson,idx)=>{
+              const prevDone = idx===0 || lessons[level.key][idx-1].done;
+              const locked = level.key!=="beginner" ? !lessons["beginner"].every(l=>l.done) && level.key==="intermediate" ? true : level.key==="advanced" ? !lessons["intermediate"].every(l=>l.done) : false : false;
+              const isLocked = locked || (idx>0 && !lessons[level.key][idx-1].done && level.key==="beginner");
               return (
-                <div key={lesson.id} style={{...S.card,opacity:locked?0.5:1,borderLeft:`3px solid ${lesson.done?"#22c55e":level.color}`}}>
+                <div key={lesson.id} style={{...S.card,opacity:isLocked?0.45:1,borderLeft:`3px solid ${lesson.done?"#22c55e":level.color}`}}>
                   <div style={{display:"flex",justifyContent:"space-between",marginBottom:7}}>
                     <span style={{fontSize:11,color:lesson.done?"#22c55e":level.color,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.04em"}}>{lesson.done?"✅ COMPLETE":level.key.toUpperCase()}</span>
                     <span style={{...S.muted,fontSize:11}}>⏱ {lesson.time}</span>
                   </div>
                   <div style={{fontWeight:700,marginBottom:12,fontSize:15}}>{lesson.title}</div>
-                  <button style={{...(lesson.done?S.btnSec:S.btnPrimary),padding:"8px 16px",fontSize:12,opacity:locked?0.5:1}} disabled={locked} onClick={()=>{setSelectedLesson(lesson);nav("lesson-detail");}}>
-                    {locked?"🔒 Locked":lesson.done?"Review →":"Start →"}
+                  <button style={{...(lesson.done?S.btnSec:S.btnPrimary),padding:"8px 16px",fontSize:12,opacity:isLocked?0.5:1}} disabled={isLocked} onClick={()=>{setSelectedLesson(lesson);nav("lesson-detail");}}>
+                    {isLocked?"🔒 Locked":lesson.done?"Review →":"Start →"}
                   </button>
                 </div>
               );
@@ -693,7 +731,7 @@ export default function DayeTrading() {
           <p style={{...S.muted,fontSize:11,marginTop:8,textAlign:"center"}}>Simulated candlestick chart — for educational purposes only</p>
         </div>
         <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
-          <button style={{...S.btnPrimary,padding:"12px 24px"}} onClick={()=>nav("lessons")}>✅ Mark as Complete</button>
+          <button style={{...S.btnPrimary,padding:"12px 24px"}} onClick={()=>markLessonDone(selectedLesson.id)}>✅ Mark as Complete</button>
           <button style={{...S.btnSec,padding:"12px 24px"}} onClick={()=>nav("quizzes")}>🧠 Take Quiz</button>
         </div>
       </div>
@@ -792,7 +830,7 @@ export default function DayeTrading() {
           <div style={{overflowX:"auto"}}>
             <table style={{...S.table,minWidth:360}}>
               <thead><tr><th style={S.th}>Time</th><th style={S.th}>Symbol</th><th style={S.th}>Type</th><th style={S.th}>Price</th><th style={S.th}>Total</th></tr></thead>
-              <tbody>{TRADE_HISTORY.map(t=>(
+              <tbody>{tradeHistory.map(t=>(
                 <tr key={t.id}>
                   <td style={{...S.td,color:"rgba(255,255,255,0.4)",fontSize:12}}>{t.time}</td>
                   <td style={{...S.td,fontWeight:700}}>{t.symbol}</td>
@@ -849,6 +887,24 @@ export default function DayeTrading() {
 
   // ── QUIZZES ─────────────────────────────────────────────────────────────────
   const PageQuizzes = () => {
+    const beginnerDone = lessons.beginner.every(l=>l.done);
+    const intermediateDone = lessons.intermediate.every(l=>l.done);
+
+    const canTakeQuiz = (level) => {
+      if (level==="beginner") return true;
+      if (level==="intermediate") return beginnerDone;
+      if (level==="advanced") return intermediateDone;
+      return false;
+    };
+
+    const handleNavAway = (dest) => {
+      if (selectedQuiz && quizState.started && !quizState.done) {
+        setQuizLeaveWarning(true);
+        return;
+      }
+      nav(dest);
+    };
+
     if (selectedQuiz && quizState.started) {
       if (quizState.done) {
         const score=quizScore(),total=selectedQuiz.questions.length,pct=Math.round((score/total)*100);
@@ -881,11 +937,26 @@ export default function DayeTrading() {
           </div>
         );
       }
+
       const q=selectedQuiz.questions[quizState.current];
       return (
         <div style={{maxWidth:600,margin:"0 auto"}}>
+          {/* Leave warning modal */}
+          {quizLeaveWarning && (
+            <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,0.7)",zIndex:999,display:"flex",alignItems:"center",justifyContent:"center",padding:24}}>
+              <div style={{...S.card,maxWidth:400,width:"100%",textAlign:"center",padding:32,border:"1px solid rgba(234,179,8,0.3)"}}>
+                <div style={{fontSize:40,marginBottom:12}}>⚠️</div>
+                <h3 style={{...S.h3,marginBottom:8}}>Leave Quiz?</h3>
+                <p style={{...S.muted,marginBottom:24,lineHeight:1.6}}>If you leave now your progress will be lost. Are you sure you want to exit?</p>
+                <div style={{display:"flex",gap:12,justifyContent:"center"}}>
+                  <button style={{...S.btnRed,padding:"10px 20px"}} onClick={()=>{setQuizLeaveWarning(false);setSelectedQuiz(null);setQuizState({started:false,current:0,answers:[],done:false});nav("dashboard");}}>Yes, Leave</button>
+                  <button style={{...S.btnPrimary,padding:"10px 20px"}} onClick={()=>setQuizLeaveWarning(false)}>Keep Going</button>
+                </div>
+              </div>
+            </div>
+          )}
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18}}>
-            <button style={{...S.btnSec,padding:"6px 14px",fontSize:12}} onClick={()=>{setSelectedQuiz(null);setQuizState({started:false,current:0,answers:[],done:false});}}>✕ Exit</button>
+            <button style={{...S.btnSec,padding:"6px 14px",fontSize:12}} onClick={()=>setQuizLeaveWarning(true)}>✕ Exit</button>
             <span style={S.muted}>Question {quizState.current+1} of {selectedQuiz.questions.length}</span>
           </div>
           <ProgressBar value={quizState.current} max={selectedQuiz.questions.length} color="#7c3aed"/>
@@ -904,33 +975,66 @@ export default function DayeTrading() {
         </div>
       );
     }
+
     return (
       <div>
-        <div style={{marginBottom:24}}><h1 style={{...S.h2,marginBottom:4}}>Quizzes</h1><p style={S.muted}>Test your trading knowledge.</p></div>
+        <div style={{marginBottom:24}}>
+          <h1 style={{...S.h2,marginBottom:4}}>Quizzes</h1>
+          <p style={S.muted}>Complete lessons first to unlock each quiz level.</p>
+        </div>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))",gap:14}}>
-          {QUIZZES.map(quiz=>(
-            <div key={quiz.title} style={{...S.card,borderTop:`3px solid ${quiz.level==="beginner"?"#22c55e":quiz.level==="intermediate"?"#eab308":"#ef4444"}`}}>
-              <div style={{fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.05em",color:quiz.level==="beginner"?"#22c55e":quiz.level==="intermediate"?"#eab308":"#ef4444",marginBottom:7}}>{quiz.level}</div>
-              <h3 style={{...S.h3,marginBottom:7}}>{quiz.title}</h3>
-              <p style={{...S.muted,fontSize:13,marginBottom:14}}>{quiz.questions.length} multiple-choice questions</p>
-              <button style={S.btnPrimary} onClick={()=>startQuiz(quiz)}>Start Quiz →</button>
-            </div>
-          ))}
+          {QUIZZES.map(quiz=>{
+            const unlocked = canTakeQuiz(quiz.level);
+            return (
+              <div key={quiz.title} style={{...S.card,borderTop:`3px solid ${quiz.level==="beginner"?"#22c55e":quiz.level==="intermediate"?"#eab308":"#ef4444"}`,opacity:unlocked?1:0.5}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:7}}>
+                  <div style={{fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.05em",color:quiz.level==="beginner"?"#22c55e":quiz.level==="intermediate"?"#eab308":"#ef4444"}}>{quiz.level}</div>
+                  {!unlocked && <span style={{fontSize:11,color:"rgba(255,255,255,0.35)"}}>🔒 Complete lessons first</span>}
+                </div>
+                <h3 style={{...S.h3,marginBottom:7}}>{quiz.title}</h3>
+                <p style={{...S.muted,fontSize:13,marginBottom:14}}>{quiz.questions.length} multiple-choice questions</p>
+                <button style={unlocked?S.btnPrimary:{...S.btnSec,opacity:0.5}} disabled={!unlocked} onClick={()=>unlocked&&startQuiz(quiz)}>
+                  {unlocked?"Start Quiz →":"🔒 Locked"}
+                </button>
+              </div>
+            );
+          })}
         </div>
       </div>
     );
   };
 
-  // ── JOURNAL ─────────────────────────────────────────────────────────────────
-  const PageJournal = () => (
+  // ── WIN/LOSS TRACKER ─────────────────────────────────────────────────────────
+  const PageJournal = () => {
+    const wins  = journal.filter(e=>e.pl>0).length;
+    const losses= journal.filter(e=>e.pl<=0).length;
+    const totalPL = journal.reduce((sum,e)=>sum+e.pl,0);
+    return (
     <div>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:22,flexWrap:"wrap",gap:12}}>
-        <div><h1 style={{...S.h2,marginBottom:4}}>Trading Journal</h1><p style={S.muted}>Track your simulated trades and reflect on decisions.</p></div>
-        <button style={S.btnPrimary} onClick={()=>setShowJournalForm(!showJournalForm)}>{showJournalForm?"✕ Cancel":"+ Add Entry"}</button>
+        <div><h1 style={{...S.h2,marginBottom:4}}>Win / Loss Tracker</h1><p style={S.muted}>Track your simulated trades and performance over time.</p></div>
+        <button style={S.btnPrimary} onClick={()=>setShowJournalForm(!showJournalForm)}>{showJournalForm?"✕ Cancel":"+ Log Trade"}</button>
       </div>
+
+      {/* Stats row */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:14,marginBottom:22}}>
+        {[
+          {label:"Total Trades", value:journal.length,         color:"#a78bfa"},
+          {label:"Wins 🏆",      value:wins,                   color:"#22c55e"},
+          {label:"Losses 📉",    value:losses,                 color:"#ef4444"},
+          {label:"Win Rate",     value:`${journal.length?Math.round((wins/journal.length)*100):0}%`, color:"#eab308"},
+          {label:"Total P&L",   value:`${totalPL>=0?"+":""}$${totalPL.toFixed(2)}`, color:totalPL>=0?"#22c55e":"#ef4444"},
+        ].map(s=>(
+          <div key={s.label} style={S.card}>
+            <div style={{...S.muted,fontSize:11,marginBottom:5,textTransform:"uppercase"}}>{s.label}</div>
+            <div style={{fontWeight:800,fontSize:22,color:s.color}}>{s.value}</div>
+          </div>
+        ))}
+      </div>
+
       {showJournalForm&&(
         <div style={{...S.card,marginBottom:22,border:"1px solid rgba(124,58,237,0.3)"}}>
-          <h3 style={{...S.h3,marginBottom:18,color:"#a78bfa"}}>New Journal Entry</h3>
+          <h3 style={{...S.h3,marginBottom:18,color:"#a78bfa"}}>Log a Trade</h3>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:12,marginBottom:12}}>
             {[{label:"Asset",key:"asset",type:"text",placeholder:"AAPL"},{label:"Entry Price",key:"entry",type:"number",placeholder:"188.50"},{label:"Exit Price",key:"exit",type:"number",placeholder:"192.45"}].map(f=>(
               <div key={f.key}>
@@ -945,25 +1049,25 @@ export default function DayeTrading() {
             <div>
               <label style={{...S.muted,fontSize:11,display:"block",marginBottom:5}}>EMOTION</label>
               <select style={{...S.select,width:"100%"}} value={newEntry.emotion} onChange={e=>setNewEntry({...newEntry,emotion:e.target.value})}>
-                {["Confident","Calm","FOMO","Anxious","Neutral","Greedy","Patient"].map(e=><option key={e}>{e}</option>)}
+                {["Confident","Calm","FOMO","Anxious","Neutral","Greedy","Patient"].map(em=><option key={em}>{em}</option>)}
               </select>
             </div>
           </div>
           <div style={{marginBottom:12}}>
-            <label style={{...S.muted,fontSize:11,display:"block",marginBottom:5}}>NOTES</label>
-            <textarea style={{...S.input,minHeight:65,resize:"vertical"}} placeholder="What was your reasoning for this trade?" value={newEntry.notes} onChange={e=>setNewEntry({...newEntry,notes:e.target.value})}/>
+            <label style={{...S.muted,fontSize:11,display:"block",marginBottom:5}}>NOTES / REASONING</label>
+            <textarea style={{...S.input,minHeight:65,resize:"vertical"}} placeholder="Why did you enter this trade?" value={newEntry.notes} onChange={e=>setNewEntry({...newEntry,notes:e.target.value})}/>
           </div>
           <div style={{marginBottom:18}}>
             <label style={{...S.muted,fontSize:11,display:"block",marginBottom:5}}>LESSON LEARNED</label>
-            <input style={S.input} placeholder="What did you learn?" value={newEntry.lesson} onChange={e=>setNewEntry({...newEntry,lesson:e.target.value})}/>
+            <input style={S.input} placeholder="What did this trade teach you?" value={newEntry.lesson} onChange={e=>setNewEntry({...newEntry,lesson:e.target.value})}/>
           </div>
-          <button style={S.btnPrimary} onClick={addJournal}>💾 Save Entry</button>
+          <button style={S.btnPrimary} onClick={addJournal}>💾 Save Trade</button>
         </div>
       )}
       <div style={S.card}>
         <div style={{overflowX:"auto"}}>
           <table style={{...S.table,minWidth:680}}>
-            <thead><tr>{["Date","Asset","Side","Entry","Exit","P&L","Emotion","Notes"].map(h=><th key={h} style={S.th}>{h}</th>)}</tr></thead>
+            <thead><tr>{["Date","Asset","Side","Entry","Exit","P&L","Result","Notes"].map(h=><th key={h} style={S.th}>{h}</th>)}</tr></thead>
             <tbody>{journal.map(e=>(
               <tr key={e.id}>
                 <td style={{...S.td,color:"rgba(255,255,255,0.4)",fontSize:12}}>{e.date}</td>
@@ -972,7 +1076,7 @@ export default function DayeTrading() {
                 <td style={S.td}>${e.entry.toLocaleString()}</td>
                 <td style={S.td}>${e.exit.toLocaleString()}</td>
                 <td style={{...S.td,color:e.pl>0?"#22c55e":"#ef4444",fontWeight:700}}>{e.pl>0?"+":""}${e.pl.toFixed(2)}</td>
-                <td style={{...S.td,fontSize:12,color:"rgba(255,255,255,0.5)"}}>{e.emotion}</td>
+                <td style={{...S.td,fontWeight:700,color:e.pl>0?"#22c55e":"#ef4444"}}>{e.pl>0?"🏆 WIN":"📉 LOSS"}</td>
                 <td style={{...S.td,fontSize:12,color:"rgba(255,255,255,0.55)",maxWidth:160}}>{e.notes}</td>
               </tr>
             ))}</tbody>
@@ -980,7 +1084,8 @@ export default function DayeTrading() {
         </div>
       </div>
     </div>
-  );
+    );
+  };
 
   // ── PROFILE ─────────────────────────────────────────────────────────────────
   const PageProfile = () => {
@@ -988,36 +1093,68 @@ export default function DayeTrading() {
     const firstName = nameParts[0] || "";
     const lastName  = nameParts.slice(1).join(" ") || "";
     const initials  = nameParts.map(p=>p[0]).join("").toUpperCase().slice(0,2);
+    const doneCount = lessons.beginner.filter(l=>l.done).length + lessons.intermediate.filter(l=>l.done).length + lessons.advanced.filter(l=>l.done).length;
+
+    const handlePicUpload = (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (ev) => setProfilePic(ev.target.result);
+      reader.readAsDataURL(file);
+    };
+
+    const saveEditName = () => {
+      const newName = `${editName.first.trim()} ${editName.last.trim()}`.trim();
+      if (newName) setCurrentUser(prev => ({...prev, name: newName}));
+      setEditingName(false);
+    };
 
     return (
     <div>
       {/* ── PROFILE HEADER ── */}
       <div style={{...S.cardPurple, marginBottom:24, padding:"28px 28px 24px"}}>
         <div style={{display:"flex",gap:20,alignItems:"center",flexWrap:"wrap"}}>
-          {/* Avatar */}
-          <div style={{width:80,height:80,borderRadius:"50%",background:"linear-gradient(135deg,#7c3aed,#5b21b6)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:28,fontWeight:800,flexShrink:0,border:"3px solid rgba(167,139,250,0.4)",letterSpacing:"-0.02em"}}>
-            {initials || "?"}
+          {/* Avatar with upload */}
+          <div style={{position:"relative",flexShrink:0}}>
+            <div style={{width:80,height:80,borderRadius:"50%",background:"linear-gradient(135deg,#7c3aed,#5b21b6)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:28,fontWeight:800,border:"3px solid rgba(167,139,250,0.4)",letterSpacing:"-0.02em",overflow:"hidden"}}>
+              {profilePic ? <img src={profilePic} alt="avatar" style={{width:"100%",height:"100%",objectFit:"cover"}}/> : (initials||"?")}
+            </div>
+            <label style={{position:"absolute",bottom:0,right:0,background:"#7c3aed",borderRadius:"50%",width:24,height:24,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",fontSize:12,border:"2px solid #080810"}}>
+              📷
+              <input type="file" accept="image/*" style={{display:"none"}} onChange={handlePicUpload}/>
+            </label>
           </div>
           {/* Name block */}
           <div style={{flex:1,minWidth:0}}>
             <div style={{fontSize:11,color:"#a78bfa",fontWeight:600,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:4}}>Your Profile</div>
-            {/* Full name displayed prominently */}
-            <div style={{display:"flex",flexWrap:"wrap",alignItems:"baseline",gap:"0 10px",marginBottom:4}}>
-              <span style={{fontSize:"clamp(22px,4vw,32px)",fontWeight:800,letterSpacing:"-0.03em",color:"#fff",lineHeight:1.1}}>{firstName}</span>
-              {lastName && <span style={{fontSize:"clamp(22px,4vw,32px)",fontWeight:800,letterSpacing:"-0.03em",color:"#a78bfa",lineHeight:1.1}}>{lastName}</span>}
-            </div>
+            {editingName ? (
+              <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:8,alignItems:"center"}}>
+                <input defaultValue={firstName} onChange={e=>setEditName(p=>({...p,first:e.target.value}))} placeholder="First" style={{...S.input,width:120,padding:"8px 12px",fontSize:14}}/>
+                <input defaultValue={lastName} onChange={e=>setEditName(p=>({...p,last:e.target.value}))} placeholder="Last" style={{...S.input,width:120,padding:"8px 12px",fontSize:14}}/>
+                <button style={{...S.btnPrimary,padding:"8px 16px",fontSize:13}} onClick={saveEditName}>Save</button>
+                <button style={{...S.btnSec,padding:"8px 14px",fontSize:13}} onClick={()=>setEditingName(false)}>Cancel</button>
+              </div>
+            ) : (
+              <div style={{display:"flex",alignItems:"baseline",gap:10,marginBottom:4,flexWrap:"wrap"}}>
+                <span style={{fontSize:"clamp(22px,4vw,32px)",fontWeight:800,letterSpacing:"-0.03em",color:"#fff",lineHeight:1.1}}>{firstName}</span>
+                {lastName && <span style={{fontSize:"clamp(22px,4vw,32px)",fontWeight:800,letterSpacing:"-0.03em",color:"#a78bfa",lineHeight:1.1}}>{lastName}</span>}
+                <button style={{...S.btnSec,padding:"4px 10px",fontSize:11,marginLeft:4}} onClick={()=>{setEditName({first:firstName,last:lastName});setEditingName(true);}}>✏️ Edit</button>
+              </div>
+            )}
             <div style={{fontSize:13,color:"rgba(255,255,255,0.4)",marginBottom:12}}>
               {currentUser.email || (currentUser.social ? `Signed in with ${currentUser.social}` : "Demo Mode")}
             </div>
             <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-              <span style={{background:"rgba(124,58,237,0.25)",border:"1px solid rgba(124,58,237,0.4)",borderRadius:99,padding:"4px 14px",fontSize:12,color:"#c4b5fd",fontWeight:600}}>Beginner Trader</span>
+              <span style={{background:"rgba(124,58,237,0.25)",border:"1px solid rgba(124,58,237,0.4)",borderRadius:99,padding:"4px 14px",fontSize:12,color:"#c4b5fd",fontWeight:600}}>
+                {doneCount < 7 ? "Beginner Trader" : doneCount < 14 ? "Intermediate Trader" : "Advanced Trader"}
+              </span>
               <span style={{background:"rgba(34,197,94,0.1)",border:"1px solid rgba(34,197,94,0.25)",borderRadius:99,padding:"4px 14px",fontSize:12,color:"#22c55e",fontWeight:600}}>🔥 4-Day Streak</span>
             </div>
           </div>
         </div>
       </div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:14,marginBottom:22}}>
-        {[{label:"Lessons Done",value:"3",icon:"📚"},{label:"Quiz Average",value:"85%",icon:"🧠"},{label:"Sim. Trades",value:"12",icon:"📈"},{label:"Total P&L",value:"+$116",icon:"💰"}].map(s=>(
+        {[{label:"Lessons Done",value:String(doneCount),icon:"📚"},{label:"Quiz Average",value:"85%",icon:"🧠"},{label:"Sim. Trades",value:String(tradeHistory.length),icon:"📈"},{label:"Total P&L",value:"+$116",icon:"💰"}].map(s=>(
           <div key={s.label} style={{...S.card,textAlign:"center"}}>
             <div style={{fontSize:26,marginBottom:7}}>{s.icon}</div>
             <div style={{fontWeight:800,fontSize:20,marginBottom:3}}>{s.value}</div>
@@ -1039,7 +1176,7 @@ export default function DayeTrading() {
         </div>
         <div style={S.card}>
           <h3 style={{...S.h3,marginBottom:18}}>Progress</h3>
-          {[{l:"Beginner",v:3,m:7,c:"#22c55e"},{l:"Intermediate",v:0,m:7,c:"#eab308"},{l:"Advanced",v:0,m:7,c:"#ef4444"}].map(p=>(
+          {[{l:"Beginner",v:lessons.beginner.filter(x=>x.done).length,m:7,c:"#22c55e"},{l:"Intermediate",v:lessons.intermediate.filter(x=>x.done).length,m:7,c:"#eab308"},{l:"Advanced",v:lessons.advanced.filter(x=>x.done).length,m:7,c:"#ef4444"}].map(p=>(
             <div key={p.l} style={{marginBottom:16}}>
               <div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}>
                 <span style={{fontSize:13}}>{p.l} Track</span>
@@ -1064,7 +1201,7 @@ export default function DayeTrading() {
     {id:"simulator", icon:"📈", label:"Simulator"},
     {id:"market-map",icon:"🗺️",label:"Market Map"},
     {id:"quizzes",   icon:"🧠", label:"Quizzes"},
-    {id:"journal",   icon:"📓", label:"Journal"},
+    {id:"journal",   icon:"📊", label:"Win/Loss"},
     {id:"profile",   icon:"👤", label:"Profile"},
   ];
 
@@ -1089,7 +1226,7 @@ export default function DayeTrading() {
       {!mobile && (
         <aside style={S.sidebar}>
           <div style={S.logo}>
-            <div style={{fontWeight:800,fontSize:18,letterSpacing:"-0.03em",cursor:"pointer"}} onClick={()=>nav("landing")}>
+            <div style={{fontWeight:800,fontSize:18,letterSpacing:"-0.03em",cursor:"pointer"}} onClick={()=>nav(currentUser.name!=="Trader"?"dashboard":"landing")}>
               <span style={{color:"#a78bfa"}}>DAYE</span> Trading
             </div>
             <div style={{fontSize:11,color:"rgba(255,255,255,0.25)",marginTop:2}}>Educational Platform</div>
