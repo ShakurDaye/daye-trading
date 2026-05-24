@@ -380,6 +380,7 @@ function AuthPage({ authMode, setAuthMode, onSuccess, onDemo, onBack }) {
         onSuccess({ firstName, lastName, name:`${firstName}${lastName?" "+lastName:""}`, email:displayEmail });
       }
     }
+  };
 
   const S = {
     page:   { minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", padding:"24px 16px", position:"relative", background:"#080810" },
